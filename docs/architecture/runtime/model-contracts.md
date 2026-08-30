@@ -53,6 +53,8 @@ open Evidence Gaps
 
 零条 Evidence 是合法结果，表示 Answer 没有提供可接受证据。
 
+运行时通过导出的 `EvidenceExtractionSchema` 约束模型输出，并由 `validateEvidenceExtraction` 执行上下文和原文引用校验。调用方只能把该函数返回的数据提交给 Domain。
+
 ## Question Generation
 
 生成器接收：

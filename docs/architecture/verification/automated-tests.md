@@ -43,6 +43,8 @@ npm run build
 
 每例断言 Schema、ID 范围、数值范围、`sourceQuote`、polarity 和后续 Policy。非法 Quote、虚构 Claim ID 和越界数值必须整项拒绝。
 
+现有 Pi Runtime 测试已覆盖这六类输入的结构契约，以及非法 Quote、越界 ID 和越界数值的拒绝行为。语义提取与后续 Policy 断言在真实模型接入后由同一语料继续执行。
+
 ## HTTP / Persistence 测试
 
 集成测试执行：

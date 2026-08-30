@@ -36,7 +36,7 @@ Pi 的输出始终是不可信 proposal。API 校验后才允许 Core 接收；P
 
 ## 当前接入面
 
-`createInterviewAgent` 只提供只读的 `get_interview_state` 工具，并强制顺序执行工具。回答接口的可运行闭环使用 Core 内的确定性提取器；模型提取替换该接缝时，必须完整满足[模型契约](model-contracts.md)，不能改变 Domain 的输入与输出边界。
+`createInterviewAgent` 只提供只读的 `get_interview_state` 工具，并强制顺序执行工具。`EvidenceExtractionSchema` 与 `validateEvidenceExtraction` 已实现 Schema、上下文 ID、数值范围和逐字 Quote 校验。回答接口的可运行闭环仍使用 Core 内的确定性提取器；模型提取接入该校验后才能进入 Domain。
 
 ## 细节入口
 
