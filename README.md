@@ -19,7 +19,12 @@
 - ✅ Answer → Evidence → Competency → Gap → Next Question（确定性 Demo 提取器）
 - ❌ Resume Parsing、完整 Skill Loading、RAG、Report
 
-当前工作范围与验收条件见 [docs/01-mvp.md](docs/01-mvp.md)，架构审阅的逐条答复见 [docs/architecture-review-response.md](docs/architecture-review-response.md)。
+## 文档导航
+
+- [系统结构与人工测试准入](docs/02-system-structure.md)：当前/目标结构、数据规则、开发顺序，以及何时可以开始不同层次的人工测试
+- [MVP 闭环](docs/01-mvp.md)：已经完成的确定性闭环与验收条件
+- [架构审阅答复](docs/architecture-review-response.md)：对前次审阅意见的逐条决策
+- [完整技术愿景](docs/Evidence-Driven%20Adaptive%20Interview%20Agent.md)：长期方案，不代表当前实现状态
 
 ## 启动
 
