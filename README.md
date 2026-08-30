@@ -1,6 +1,6 @@
 # Better Resume
 
-证据驱动自适应面试助手骨架。`interview-core` 独立管理 Project、Topic、Claim、Evidence、Competency 和确定性 Policy；Pi 目前只是经过类型验证的实验性适配入口，尚未接管 Session、Skill Loading 或 Compaction。
+证据驱动自适应面试助手。`interview-core` 管理 Project、Topic、Claim、Evidence、Competency 和确定性 Policy；`pi-runtime` 提供受控的 Agent 与模型边界。
 
 ## 当前可运行内容
 
@@ -8,23 +8,12 @@
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化
 - Anchor Project 与 Hierarchical Policy
-- 只读工具白名单的 Pi Agent 适配入口（未接入 HTTP 流程）
-- 一个 `ownership-grill` Interview Skill 样板
-
-## 当前阶段
-
-- ✅ 数据模型、Anchor Project、Policy 骨架
-- ✅ HTTP / SQLite Session 骨架
-- ✅ Pi 只读适配实验
-- ✅ Answer → Evidence → Competency → Gap → Next Question（确定性 Demo 提取器）
-- ❌ Resume Parsing、完整 Skill Loading、RAG、Report
+- 只读工具白名单的 Pi Agent 入口
+- `ownership-grill` Interview Skill 指令
 
 ## 文档导航
 
-- [系统结构与人工测试准入](docs/02-system-structure.md)：当前/目标结构、数据规则、开发顺序，以及何时可以开始不同层次的人工测试
-- [MVP 闭环](docs/01-mvp.md)：已经完成的确定性闭环与验收条件
-- [架构审阅答复](docs/architecture-review-response.md)：对前次审阅意见的逐条决策
-- [完整技术愿景](docs/Evidence-Driven%20Adaptive%20Interview%20Agent.md)：长期方案，不代表当前实现状态
+- [系统架构](docs/architecture.md)：组件边界、领域模型、状态机、运行时契约、持久化、验证结构与人工测试准入
 
 ## 启动
 
@@ -59,8 +48,6 @@ roles                    岗位能力模型
 skills                   Interview Skills（环境中的 .agents 为只读）
 docs                     技术设计
 ```
-
-下一步只替换一个点：把确定性 Demo Evidence 提取器换成 Pi 的结构化模型输出。PDF 解析、RAG、报告和更多岗位继续暂缓。
 
 ## 参考
 
