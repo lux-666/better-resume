@@ -4,7 +4,7 @@
 
 ## 当前事实
 
-Web 可以创建、开始和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。API 提供 create/start/answer/state，SQLite 每行保存完整 InterviewState，进程重启后 State 仍可读取。
+Web 可以创建、开始和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。API 提供 create/start/answer/state，SQLite 每行保存完整 InterviewState，进程重启后 State 仍可读取；配置 Pi 模型后 Answer 使用已校验的模型 Evidence 提案。
 
 浏览器刷新不会恢复 Session；Answer 没有 questionId、commandId、并发写保护或 Provider 失败恢复；错误尚未完整区分 `409`、`422`、`503` 和 `500`；账户与 Session 所有权尚未建设。
 

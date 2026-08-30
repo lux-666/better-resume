@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateEvidenceExtraction } from "./index.ts";
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+} from "@earendil-works/pi-ai";
+import {
+  createFixtureCandidate,
+  createInterviewState,
+  startInterview,
+} from "../../interview-core/src/index.ts";
+import { extractEvidenceWithAgent, validateEvidenceExtraction } from "./index.ts";
 
 const proposal = (
   sourceQuote: string,
@@ -61,4 +72,35 @@ test("rejects untraceable or out-of-context evidence", () => {
   for (const value of invalid) {
     assert.throws(() => validateEvidenceExtraction(value, context));
   }
+});
+
+test("Pi Agent submits validated evidence for the active answer context", async () => {
+  const state = createInterviewState(
+    "session",
+    "llm_application_engineer",
+    createFixtureCandidate("Candidate"),
+  );
+  startInterview(state);
+  const answer = "我独立实现了召回模块。";
+  const extraction = proposal(answer, "support");
+  extraction.evidence[0].claimIds = ["claim_rag_ownership"];
+  const faux = fauxProvider();
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("submit_evidence", extraction),
+      { stopReason: "toolUse" },
+    ),
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+
+  const result = await extractEvidenceWithAgent({
+    model: faux.getModel(),
+    streamFn: models.streamSimple.bind(models),
+    state,
+    answer,
+  });
+
+  assert.deepEqual(result, extraction);
+  assert.equal(faux.state.callCount, 1);
 });

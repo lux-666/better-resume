@@ -6,7 +6,7 @@
 
 目标是一个 Interview Agent 在同一 Session 内持续交流 6–10 轮。每轮利用必要历史，但事实、评分和下一目标始终由 InterviewState 与确定性 Policy 控制。
 
-当前已有 `createInterviewAgent`、只读 `get_interview_state` 工具、顺序工具执行、`EvidenceExtractionSchema` 和 `validateEvidenceExtraction`。Answer API 仍调用确定性 Demo 路径；Pi 尚未进入产品主链，模型历史也不能从 Session 重建。
+当前已有 `createInterviewAgent`、只读 `get_interview_state` 工具、顺序工具执行、`EvidenceExtractionSchema` 和 `validateEvidenceExtraction`。配置 `PI_PROVIDER` 与 `PI_MODEL` 后，Answer API 通过结构化 `submit_evidence` 工具消费 Pi 提案；未配置时保留确定性 Demo fallback。模型历史仍不能从 Session 重建。
 
 ## 双状态边界
 

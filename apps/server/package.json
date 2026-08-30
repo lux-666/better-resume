@@ -2,5 +2,9 @@
   "name": "@better-resume/server",
   "private": true,
   "type": "module",
-  "dependencies": { "@better-resume/interview-core": "*" }
+  "dependencies": {
+    "@better-resume/interview-core": "*",
+    "@better-resume/pi-runtime": "*",
+    "@earendil-works/pi-ai": "0.84.4"
+  }
 }

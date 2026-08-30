@@ -8,7 +8,7 @@
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化
 - Anchor Project 与 Hierarchical Policy
-- 只读工具白名单的 Pi Agent 入口
+- 可选的 Pi Agent Evidence 提取主链与确定性 Demo fallback
 - `ownership-grill` Interview Skill 指令
 
 ## 文档导航
@@ -31,6 +31,12 @@ npm run dev:web
 ```
 
 访问 <http://localhost:5173>。
+
+默认使用确定性 Demo 提取。要让 Answer API 使用真实模型：
+
+```bash
+PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run dev
+```
 
 ```bash
 npm test

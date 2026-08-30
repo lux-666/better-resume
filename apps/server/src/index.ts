@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import {
   createFixtureCandidate,
   createInterviewState,
@@ -10,6 +11,7 @@ import {
   submitAnswer,
   type InterviewState,
 } from "../../../packages/interview-core/src/index.ts";
+import { extractEvidenceWithAgent } from "../../../packages/pi-runtime/src/index.ts";
 
 const port = Number(process.env.PORT ?? 3000);
 const databasePath = resolve(process.env.DATABASE_PATH ?? "data/better-resume.db");
@@ -28,6 +30,12 @@ database.exec(`
 const role = JSON.parse(
   readFileSync(resolve("roles/llm_engineer/role.json"), "utf8"),
 ) as unknown;
+const piProvider = process.env.PI_PROVIDER;
+const piModelId = process.env.PI_MODEL;
+if (Boolean(piProvider) !== Boolean(piModelId)) throw new Error("PI_PROVIDER and PI_MODEL must be set together");
+const models = piProvider ? builtinModels() : undefined;
+const model = piProvider && piModelId ? models?.getModel(piProvider, piModelId) : undefined;
+if (piProvider && !model) throw new Error(`Unknown Pi model: ${piProvider}/${piModelId}`);
 
 function json(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -108,7 +116,16 @@ const server = createServer(async (request, response) => {
       if (typeof body.answer !== "string" || !body.answer.trim() || body.answer.length > 10_000) {
         return json(response, 400, { error: "answer must be a non-empty string up to 10000 characters" });
       }
-      const step = submitAnswer(state, body.answer);
+      const answer = body.answer.trim();
+      const extraction = model && models
+        ? await extractEvidenceWithAgent({
+            model,
+            streamFn: models.streamSimple.bind(models),
+            state,
+            answer,
+          })
+        : undefined;
+      const step = submitAnswer(state, answer, extraction?.evidence);
       saveState(state);
       return json(response, 200, step);
     }

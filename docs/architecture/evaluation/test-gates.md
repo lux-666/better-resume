@@ -4,7 +4,7 @@
 
 ## 当前事实
 
-`npm test` 当前执行 4 个产品行为测试和 1 个架构结构测试：Core 的固定两轮闭环与 Anchor/Gap 路由，Pi Runtime 的结构语料与非法 Evidence 拒绝，以及文档唯一层级、链接和孤儿检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
+`npm test` 当前执行 6 个产品行为测试和 1 个架构结构测试：Core 的固定两轮闭环、Anchor/Gap 路由与外部 Evidence 消费，Pi Runtime 的结构语料、非法 Evidence 拒绝与 Agent 工具提交，以及文档唯一层级、链接和孤儿检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
 
 当前没有真实模型语义回归、HTTP 幂等/并发/恢复测试或 6–10 轮固定 Profile，因此不能对候选人能力结论做有效性评价。
 
@@ -85,7 +85,7 @@ npm run dev:web
 
 以下条件必须全部满足：
 
-- [ ] Pi Extraction 通过 Schema、上下文和 Quote 校验并进入 Answer 主链；
+- [x] Pi Extraction 通过 Schema、上下文和 Quote 校验并进入 Answer 主链；
 - [ ] 模型语义语料覆盖具体、模糊、否认、矛盾和无关回答；
 - [ ] `ownership-grill`、`metric-audit`、`failure-forensics` 可执行；
 - [ ] Question Generation 每轮只产生一个不重复主问题；

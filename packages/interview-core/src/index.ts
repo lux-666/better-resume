@@ -86,6 +86,8 @@ export interface Evidence {
   sourceQuote: string;
 }
 
+export type EvidenceProposal = Omit<Evidence, "id" | "turnId" | "projectId" | "topicId">;
+
 export interface CompetencyState {
   competencyId: string;
   score?: number;
@@ -286,14 +288,27 @@ export function startInterview(state: InterviewState): InterviewStep {
   return { state, decision, question, evidence: [] };
 }
 
-export function submitAnswer(state: InterviewState, answer: string): InterviewStep {
-  if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
-  const text = answer.trim();
-  if (!text) throw new Error("Answer cannot be empty");
+export function getActiveInterviewContext(state: InterviewState): {
+  project: Project;
+  topic: TopicThread;
+  gap: EvidenceGap;
+} {
   const project = state.candidate.projects.find((item) => item.status === "active");
   const topic = project?.topics.find((item) => item.status === "active");
   const gap = topic?.unresolvedGaps.find((item) => item.status === "open");
   if (!project || !topic || !gap) throw new Error("Active interview context is incomplete");
+  return { project, topic, gap };
+}
+
+export function submitAnswer(
+  state: InterviewState,
+  answer: string,
+  proposedEvidence?: readonly EvidenceProposal[],
+): InterviewStep {
+  if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
+  const text = answer.trim();
+  if (!text) throw new Error("Answer cannot be empty");
+  const { project, topic, gap } = getActiveInterviewContext(state);
 
   const turn: InterviewTurn = {
     id: globalThis.crypto.randomUUID(),
@@ -307,13 +322,23 @@ export function submitAnswer(state: InterviewState, answer: string): InterviewSt
   state.turns.push(turn);
   topic.turnIds.push(turn.id);
 
-  const evidence = extractDemoEvidence(text, turn, project, topic, gap);
-  state.evidence.push(evidence);
-  topic.evidenceIds.push(evidence.id);
-  updateClaims(state, project, evidence);
-  if (evidence.polarity === "support" && evidence.specificity >= 0.5) gap.status = "resolved";
+  const evidence = (proposedEvidence ?? [extractDemoEvidence(text, project, topic, gap)]).map((item): Evidence => ({
+    ...item,
+    id: globalThis.crypto.randomUUID(),
+    turnId: turn.id,
+    projectId: project.id,
+    topicId: topic.id,
+  }));
+  state.evidence.push(...evidence);
+  topic.evidenceIds.push(...evidence.map((item) => item.id));
+  for (const item of evidence) updateClaims(state, project, item);
+  if (evidence.some((item) =>
+    item.competencyId === gap.competencyId && item.polarity === "support" && item.specificity >= 0.5
+  )) gap.status = "resolved";
   if (!topic.unresolvedGaps.some((item) => item.status === "open")) topic.saturation = 1;
-  updateCompetency(state, gap.competencyId);
+  for (const competencyId of new Set(evidence.map((item) => item.competencyId))) {
+    updateCompetency(state, competencyId);
+  }
 
   const decision = getNextInterviewAction(state);
   activateDecisionTarget(state, decision);
@@ -321,17 +346,16 @@ export function submitAnswer(state: InterviewState, answer: string): InterviewSt
   state.status = decision.action === "FINISH" ? "completed" : "active";
   state.currentQuestion = question;
   state.traces.push(traceFor(decision, question, turn.id));
-  return { state, decision, question, evidence: [evidence] };
+  return { state, decision, question, evidence };
 }
 
 // ponytail: deterministic demo extraction proves the data flow; replace with Pi structured output before real evaluation.
 function extractDemoEvidence(
   answer: string,
-  turn: InterviewTurn,
   project: Project,
   topic: TopicThread,
   gap: EvidenceGap,
-): Evidence {
+): EvidenceProposal {
   const isMetric = gap.type.includes("metric");
   const hasSignal = isMetric
     ? /基线|测试集|样本|准确率|召回率|precision|recall|评估|指标/i.test(answer)
@@ -342,10 +366,6 @@ function extractDemoEvidence(
     .filter((claim) => isMetric ? /%|准确率|提升/.test(claim.text) : /负责|架构|实现/.test(claim.text))
     .map((claim) => claim.id);
   return {
-    id: globalThis.crypto.randomUUID(),
-    turnId: turn.id,
-    projectId: project.id,
-    topicId: topic.id,
     claimIds,
     competencyId: gap.competencyId,
     statement: supported ? `候选人提供了${topic.name}的具体说明。` : `候选人的回答尚未明确${topic.name}。`,

@@ -66,3 +66,26 @@ test("policy starts from the strongest project and routes open gaps to a skill",
   assert.equal(decision.action, "CONTINUE_TOPIC");
   assert.equal(decision.skill, "metric-audit");
 });
+
+test("answer transition consumes supplied evidence instead of demo extraction", () => {
+  const state = createInterviewState(
+    "session",
+    "llm_application_engineer",
+    createFixtureCandidate("Candidate"),
+  );
+  startInterview(state);
+  const step = submitAnswer(state, "召回模块是我的交付物。", [{
+    claimIds: ["claim_rag_ownership"],
+    competencyId: "software_engineering",
+    statement: "候选人明确了个人交付边界。",
+    polarity: "support",
+    strength: 0.8,
+    specificity: 0.9,
+    evaluatorConfidence: 0.8,
+    sourceQuote: "我的交付物",
+  }]);
+  assert.equal(step.evidence[0].statement, "候选人明确了个人交付边界。");
+  assert.equal(step.evidence[0].sourceQuote, "我的交付物");
+  assert.equal(state.candidate.projects[0].claims[0].status, "supported");
+  assert.equal(step.decision.action, "SWITCH_TOPIC");
+});
