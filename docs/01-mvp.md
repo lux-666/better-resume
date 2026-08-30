@@ -1,5 +1,7 @@
 # MVP：证据驱动问答闭环
 
+> Status: deterministic demo complete; production Evidence Extraction pending.
+
 ## 目标
 
 证明一件事：候选人的回答能够产生可追溯 Evidence，改变 Competency State 和 Evidence Gap，并确定下一问。
@@ -17,12 +19,14 @@ Fixture Profile
 
 ## 验收条件
 
-1. 使用一个固定的 AI / LLM Engineer Profile，包含一个 Project 和两个 Claim。
-2. `POST /api/interviews/:id/start` 返回基于 Anchor Project 的第一问。
-3. `POST /api/interviews/:id/answer` 永久保存原始回答和带 `sourceQuote` 的 Evidence。
-4. Evidence 更新至少一个 Claim、Competency State 和 Evidence Gap。
-5. Policy 返回 `CONTINUE_TOPIC` 或 `SWITCH_TOPIC`，并记录 Decision Trace。
-6. 响应包含下一问；一条自动化测试覆盖完整闭环。
+1. ✅ 使用一个固定的 AI / LLM Engineer Profile，包含一个 Project 和两个 Claim。
+2. ✅ `POST /api/interviews/:id/start` 返回基于 Anchor Project 的第一问。
+3. ✅ `POST /api/interviews/:id/answer` 永久保存原始回答和带 `sourceQuote` 的 Evidence。
+4. ✅ Evidence 更新至少一个 Claim、Competency State 和 Evidence Gap。
+5. ✅ Policy 返回 `CONTINUE_TOPIC` 或 `SWITCH_TOPIC`，并记录 Decision Trace。
+6. ✅ 响应包含下一问；自动化测试覆盖完整两轮闭环。
+
+当前 Evidence Extraction 是明确标注的中文关键词 Demo，不具备真实评估效力。它只用于验证状态流、评分、Policy、持久化和 UI；下一步由 Pi 结构化输出原位替换。
 
 ## 明确不做
 

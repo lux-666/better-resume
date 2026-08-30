@@ -4,8 +4,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  createFixtureCandidate,
   createInterviewState,
-  type CandidateProfile,
+  startInterview,
+  submitAnswer,
   type InterviewState,
 } from "../../../packages/interview-core/src/index.ts";
 
@@ -53,6 +55,12 @@ function loadState(id: string): InterviewState | undefined {
   return row ? (JSON.parse(row.state) as InterviewState) : undefined;
 }
 
+function saveState(state: InterviewState): void {
+  database
+    .prepare("UPDATE sessions SET state = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(state), new Date().toISOString(), state.sessionId);
+}
+
 const server = createServer(async (request, response) => {
   try {
     const method = request.method ?? "GET";
@@ -72,21 +80,37 @@ const server = createServer(async (request, response) => {
       }
 
       const id = randomUUID();
-      const candidate: CandidateProfile = {
-        id: randomUUID(),
-        name: typeof candidateName === "string" && candidateName.trim() ? candidateName.trim() : "匿名候选人",
-        education: [],
-        experiences: [],
-        projects: [],
-        skills: [],
-        claims: [],
-      };
+      const candidate = createFixtureCandidate(
+        typeof candidateName === "string" && candidateName.trim() ? candidateName.trim() : "匿名候选人",
+      );
       const state = createInterviewState(id, "llm_application_engineer", candidate);
       const now = new Date().toISOString();
       database
         .prepare("INSERT INTO sessions (id, state, created_at, updated_at) VALUES (?, ?, ?, ?)")
         .run(id, JSON.stringify(state), now, now);
       return json(response, 201, state);
+    }
+
+    const startMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/start$/);
+    if (method === "POST" && startMatch) {
+      const state = loadState(startMatch[1]);
+      if (!state) return json(response, 404, { error: "Interview not found" });
+      const step = startInterview(state);
+      saveState(state);
+      return json(response, 200, step);
+    }
+
+    const answerMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/answer$/);
+    if (method === "POST" && answerMatch) {
+      const state = loadState(answerMatch[1]);
+      if (!state) return json(response, 404, { error: "Interview not found" });
+      const body = await readJson(request);
+      if (typeof body.answer !== "string" || !body.answer.trim() || body.answer.length > 10_000) {
+        return json(response, 400, { error: "answer must be a non-empty string up to 10000 characters" });
+      }
+      const step = submitAnswer(state, body.answer);
+      saveState(state);
+      return json(response, 200, step);
     }
 
     const stateMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/state$/);

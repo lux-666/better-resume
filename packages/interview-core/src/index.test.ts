@@ -1,13 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createInterviewState, getNextInterviewAction, selectAnchorProject,
+  createFixtureCandidate, createInterviewState, getNextInterviewAction, selectAnchorProject,
+  startInterview, submitAnswer,
   type CandidateProfile, type Project,
 } from "./index.ts";
 
 const project = (id: string, relevance: number): Project => ({
   id, name: id, description: "", technologies: ["TypeScript"], outcomes: [], claims: [],
   mappedCompetencies: ["software_engineering"], topics: [], status: "unexplored", roleRelevance: relevance,
+});
+
+test("fixture interview turns an answer into evidence and the next policy question", () => {
+  const state = createInterviewState(
+    "session",
+    "llm_application_engineer",
+    createFixtureCandidate("Candidate"),
+  );
+  const started = startInterview(state);
+  assert.match(started.question ?? "", /本人具体负责/);
+
+  const ownership = submitAnswer(
+    state,
+    "我负责检索架构设计，并独立实现了切分、召回和 reranker 接入。",
+  );
+  assert.equal(ownership.evidence[0].sourceQuote, "我负责检索架构设计，并独立实现了切分、召回和 reranker 接入。");
+  assert.deepEqual(ownership.evidence[0].claimIds, ["claim_rag_ownership"]);
+  assert.equal(state.candidate.projects[0].claims[0].status, "supported");
+  assert.equal(state.competencies[0].competencyId, "software_engineering");
+  assert.equal(ownership.decision.action, "SWITCH_TOPIC");
+  assert.match(ownership.question ?? "", /指标如何定义/);
+  assert.equal(state.traces.at(-1)?.turnId, state.turns[0].id);
+
+  const metric = submitAnswer(
+    state,
+    "准确率按人工标注测试集上的正确回答比例计算，基线为未加 reranker 的版本。",
+  );
+  assert.equal(metric.decision.action, "FINISH");
+  assert.equal(state.status, "completed");
+  assert.equal(state.evidence.length, 2);
 });
 
 test("policy starts from the strongest project and routes open gaps to a skill", () => {

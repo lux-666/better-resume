@@ -18,6 +18,6 @@
 | 12 | MVP 过大 | 完全接受 | [01-mvp.md](01-mvp.md) 已把 MVP 缩成一个 Profile、一个 Project、两个 Claim 和一条多轮证据链。 |
 | 13 | 文档与代码不一致 | 接受 | 3400 行原文保留为完整愿景；README 和 `01-mvp.md` 成为当前状态与短期范围的事实来源。 |
 
-## 下一提交的唯一目标
+## 下一步的唯一目标
 
-完成 [01-mvp.md](01-mvp.md) 的六条验收条件。Topic Discovery、RAG、完整报告、多个 Skills 和漂亮 UI 不并行推进。
+[01-mvp.md](01-mvp.md) 的六条验收条件已由确定性 Demo 闭合。下一步只把关键词 Evidence 提取替换为 Pi 结构化输出；Topic Discovery、RAG、完整报告和多个 Skills 不并行推进。

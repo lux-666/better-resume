@@ -4,8 +4,8 @@
 
 ## 当前可运行内容
 
-- React / Vite 岗位与 Session 创建页
-- 原生 Node HTTP API：`GET /api/health`、`GET /api/roles`、`POST /api/interviews`、`GET /api/interviews/:id/state`
+- React / Vite 两轮 Demo 面试与实时 Evidence 面板
+- 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化
 - Anchor Project 与 Hierarchical Policy
 - 只读工具白名单的 Pi Agent 适配入口（未接入 HTTP 流程）
@@ -16,7 +16,7 @@
 - ✅ 数据模型、Anchor Project、Policy 骨架
 - ✅ HTTP / SQLite Session 骨架
 - ✅ Pi 只读适配实验
-- ⏳ Answer → Evidence → Competency → Gap → Next Question
+- ✅ Answer → Evidence → Competency → Gap → Next Question（确定性 Demo 提取器）
 - ❌ Resume Parsing、完整 Skill Loading、RAG、Report
 
 当前工作范围与验收条件见 [docs/01-mvp.md](docs/01-mvp.md)，架构审阅的逐条答复见 [docs/architecture-review-response.md](docs/architecture-review-response.md)。
@@ -55,7 +55,7 @@ skills                   Interview Skills（环境中的 .agents 为只读）
 docs                     技术设计
 ```
 
-下一条纵切片是 `fixture profile → start → answer → Evidence extraction → Competency update → Gap analysis → Policy → next question`。PDF 解析、RAG、报告和更多岗位在这条链跑通后再加。
+下一步只替换一个点：把确定性 Demo Evidence 提取器换成 Pi 的结构化模型输出。PDF 解析、RAG、报告和更多岗位继续暂缓。
 
 ## 参考
 
