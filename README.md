@@ -13,7 +13,7 @@
 
 ## 文档导航
 
-- [系统架构](docs/architecture.md)：组件边界、领域模型、状态机、运行时契约、持久化、验证结构与人工测试准入
+- [系统架构 Map](docs/architecture/README.md)：从系统总览进入各板块、具体契约与测试手册
 
 ## 启动
 
@@ -46,7 +46,7 @@ packages/interview-core  业务状态与确定性策略
 packages/pi-runtime      Pi Agent 安全适配层
 roles                    岗位能力模型
 skills                   Interview Skills（环境中的 .agents 为只读）
-docs                     技术设计
+docs/architecture        三级系统架构文档
 ```
 
 ## 参考
