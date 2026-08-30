@@ -49,6 +49,7 @@ Better Resume 是证据驱动的自适应面试系统。输出不是对对话的
 
 | 二级板块 | 板块职责 | 三级细节 |
 | --- | --- | --- |
+| [Capabilities](capabilities/README.md) | 各能力方向的当前进度、目标设计与下一验收点 | [持续对话](capabilities/agent-conversation.md) · [胜任力与证据](capabilities/competency-and-evidence.md) · [Policy 与 Skills](capabilities/interview-policy-and-skills.md) · [简历理解](capabilities/resume-understanding.md) · [产品 Session](capabilities/product-session.md) · [验证准入](capabilities/evaluation-readiness.md) |
 | [Domain](domain/README.md) | 领域对象、状态、评分与 Policy | [领域模型](domain/model.md) · [不变量与状态机](domain/invariants-and-state-machine.md) |
 | [Runtime](runtime/README.md) | 回答命令、模型调用与 Skill 执行 | [回答命令](runtime/answer-command.md) · [模型契约](runtime/model-contracts.md) |
 | [Platform](platform/README.md) | Web、API、持久化、安全与可观测性 | [API 与持久化](platform/api-and-persistence.md) · [安全与可观测性](platform/security-and-observability.md) |
@@ -66,6 +67,10 @@ interview-core → no runtime or provider package
 ```
 
 `interview-core` 是领域边界。传输、数据库、模型提供商和 UI 可以依赖它；它不反向依赖这些实现。
+
+## 能力建设视图
+
+技术板块回答“代码归谁”；[能力建设 Map](capabilities/README.md)回答“每个产品能力做到哪、下一次怎样验收”。状态只描述当前主链，不按文件数量或主观百分比估算。
 
 ## 硬边界
 

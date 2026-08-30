@@ -14,6 +14,7 @@
 ## 文档导航
 
 - [系统架构 Map](docs/architecture/README.md)：从系统总览进入各板块、具体契约与测试手册
+- [能力建设进度](docs/architecture/capabilities/README.md)：查看 Agent、胜任力、面试策略、简历、产品与验证各方向的当前状态
 
 ## 启动
 
