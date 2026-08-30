@@ -47,13 +47,14 @@ Better Resume 是证据驱动的自适应面试系统。输出不是对对话的
 
 ## 文档地图
 
-| 二级板块 | 板块职责 | 三级细节 |
-| --- | --- | --- |
-| [Capabilities](capabilities/README.md) | 各能力方向的当前进度、目标设计与下一验收点 | [持续对话](capabilities/agent-conversation.md) · [胜任力与证据](capabilities/competency-and-evidence.md) · [Policy 与 Skills](capabilities/interview-policy-and-skills.md) · [简历理解](capabilities/resume-understanding.md) · [产品 Session](capabilities/product-session.md) · [验证准入](capabilities/evaluation-readiness.md) |
-| [Domain](domain/README.md) | 领域对象、状态、评分与 Policy | [领域模型](domain/model.md) · [不变量与状态机](domain/invariants-and-state-machine.md) |
-| [Runtime](runtime/README.md) | 回答命令、模型调用与 Skill 执行 | [回答命令](runtime/answer-command.md) · [模型契约](runtime/model-contracts.md) |
-| [Platform](platform/README.md) | Web、API、持久化、安全与可观测性 | [API 与持久化](platform/api-and-persistence.md) · [安全与可观测性](platform/security-and-observability.md) |
-| [Verification](verification/README.md) | 自动验证、人工走查与真人测试准入 | [自动化测试](verification/automated-tests.md) · [人工测试](verification/manual-tests.md) |
+| 二级板块 | 唯一职责 |
+| --- | --- |
+| [Agent 持续对话](agent/README.md) | 单 Interview Agent 的跨轮上下文与模型边界 |
+| [胜任力与证据](competency/README.md) | 领域对象、Role Pack、Evidence 与评分 |
+| [Interview Policy 与 Skills](interview/README.md) | 状态机、调查路由、Skill 与停止条件 |
+| [简历理解](resume/README.md) | Resume 到 Candidate、Claim、Topic 与 Gap 的转换 |
+| [产品 Session](product/README.md) | Web、API、SQLite、安全与可观测性 |
+| [Evaluation 与真人准入](evaluation/README.md) | 自动化、系统走查、模型回归与真人测试门槛 |
 
 ## 依赖方向
 
@@ -67,10 +68,6 @@ interview-core → no runtime or provider package
 ```
 
 `interview-core` 是领域边界。传输、数据库、模型提供商和 UI 可以依赖它；它不反向依赖这些实现。
-
-## 能力建设视图
-
-技术板块回答“代码归谁”；[能力建设 Map](capabilities/README.md)回答“每个产品能力做到哪、下一次怎样验收”。状态只描述当前主链，不按文件数量或主观百分比估算。
 
 ## 硬边界
 
@@ -94,4 +91,4 @@ roles                    岗位能力与阈值
 skills                   可复用调查指令
 ```
 
-要运行当前闭环，从[人工测试](verification/manual-tests.md)开始；要判断何时可以进行模型驱动的真人测试，查看同页的准入清单。
+运行当前闭环和真人测试准入均由 Evaluation 板块统一维护。

@@ -1,6 +1,6 @@
-# 简历理解
+# 解析与 Candidate 构建契约
 
-[返回能力建设 Map](README.md) · [领域模型](../domain/model.md)
+[返回简历板块](README.md) · [返回架构 Map](../README.md) · [领域模型](../competency/model-and-evidence.md)
 
 ## 目标
 
