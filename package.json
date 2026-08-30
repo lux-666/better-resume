@@ -1,0 +1,23 @@
+{
+  "name": "better-resume",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "node --watch --import tsx apps/server/src/index.ts",
+    "dev:web": "vite apps/web",
+    "start": "node --import tsx apps/server/src/index.ts",
+    "build": "npm run typecheck && npm run build -w @better-resume/web",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test packages/interview-core/src/index.test.ts"
+  },
+  "engines": { "node": ">=22.19" },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}

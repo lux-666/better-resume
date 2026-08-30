@@ -1,0 +1,14 @@
+{
+  "id": "llm_application_engineer",
+  "name": "AI / LLM 应用工程师",
+  "competencies": [
+    { "id": "llm_fundamentals", "name": "LLM 基础", "weight": 0.12, "core": true },
+    { "id": "rag_engineering", "name": "RAG 工程", "weight": 0.18, "core": true },
+    { "id": "agent_engineering", "name": "Agent 工程", "weight": 0.15, "core": true },
+    { "id": "software_engineering", "name": "软件工程", "weight": 0.15, "core": true },
+    { "id": "evaluation", "name": "评估", "weight": 0.12, "core": true },
+    { "id": "problem_solving", "name": "问题解决", "weight": 0.12, "core": true },
+    { "id": "system_design", "name": "系统设计", "weight": 0.10, "core": false },
+    { "id": "communication", "name": "沟通", "weight": 0.06, "core": false }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@better-resume/server",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@better-resume/interview-core": "*" }
+}
