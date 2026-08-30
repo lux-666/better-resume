@@ -4,7 +4,7 @@
 
 ## 当前可运行内容
 
-- React / Vite 两轮 Demo 面试与实时 Evidence 面板
+- React / Vite 两轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化
 - Anchor Project 与 Hierarchical Policy

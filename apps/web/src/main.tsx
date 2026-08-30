@@ -12,8 +12,27 @@ type InterviewState = {
   sessionId: string;
   status: "draft" | "active" | "completed";
   currentQuestion?: string;
+  candidate: {
+    projects: Array<{
+      id: string;
+      name: string;
+      status: string;
+      topics: Array<{
+        id: string;
+        name: string;
+        status: string;
+        unresolvedGaps: Array<{ type: string; description: string; status: string }>;
+      }>;
+    }>;
+  };
   evidence: Array<{ id: string; statement: string; sourceQuote: string; polarity: string }>;
   competencies: Array<{ competencyId: string; score?: number; confidence: number }>;
+  traces: Array<{
+    action: string;
+    reason: string;
+    selectedSkill?: string;
+    targetGap?: string;
+  }>;
 };
 
 type InterviewStep = { state: InterviewState; question?: string };
@@ -35,6 +54,10 @@ function App() {
   const [interview, setInterview] = useState<InterviewState>();
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
+  const activeProject = interview?.candidate.projects.find((project) => project.status === "active");
+  const activeTopic = activeProject?.topics.find((topic) => topic.status === "active");
+  const openGap = activeTopic?.unresolvedGaps.find((gap) => gap.status === "open");
+  const latestTrace = interview?.traces.at(-1);
 
   useEffect(() => {
     fetch("/api/roles")
@@ -121,6 +144,14 @@ function App() {
         </article>
         <article>
           <span>02 / 实时证据</span>
+          {activeProject && <dl className="context">
+            <div><dt>Project</dt><dd>{activeProject.name}</dd></div>
+            <div><dt>Topic</dt><dd>{activeTopic?.name ?? "—"}</dd></div>
+            <div><dt>Gap</dt><dd>{openGap?.description ?? "已解决"}</dd></div>
+            <div><dt>Decision</dt><dd>{latestTrace?.action ?? "—"}</dd></div>
+            <div><dt>Skill</dt><dd>{latestTrace?.selectedSkill ?? "—"}</dd></div>
+            {latestTrace?.reason && <div><dt>Reason</dt><dd>{latestTrace.reason}</dd></div>}
+          </dl>}
           <ul>
             {role?.competencies.map((competency) => {
               const state = interview?.competencies.find((item) => item.competencyId === competency.id);

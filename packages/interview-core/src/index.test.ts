@@ -29,8 +29,11 @@ test("fixture interview turns an answer into evidence and the next policy questi
   assert.equal(state.candidate.projects[0].claims[0].status, "supported");
   assert.equal(state.competencies[0].competencyId, "software_engineering");
   assert.equal(ownership.decision.action, "SWITCH_TOPIC");
+  assert.equal(ownership.decision.skill, "metric-audit");
+  assert.equal(ownership.decision.targetGap, "metric_definition");
   assert.match(ownership.question ?? "", /指标如何定义/);
   assert.equal(state.traces.at(-1)?.turnId, state.turns[0].id);
+  assert.equal(state.traces.at(-1)?.selectedSkill, "metric-audit");
 
   const metric = submitAnswer(
     state,

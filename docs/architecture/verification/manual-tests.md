@@ -66,7 +66,7 @@ npm run dev:web
 - [ ] Session 支持 6–10 轮，并覆盖继续、切 Topic、切 Project、矛盾澄清和结束；
 - [ ] 强证据、弱证据、矛盾证据三个固定 Profile 全部通过；
 - [ ] Provider 超时和一次重试不会丢失或重复 Session 数据；
-- [ ] UI 展示当前 Topic、Gap、Evidence 和 DecisionTrace；
+- [x] UI 展示当前 Topic、Gap、Evidence 和 DecisionTrace；
 - [ ] 每条 Evidence 和每个 Question 都能追溯到保存的 State；
 - [ ] Domain、Model Contract、HTTP 自动化测试与固定答案走查全部通过。
 

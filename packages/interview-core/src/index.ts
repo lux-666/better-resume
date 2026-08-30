@@ -253,6 +253,20 @@ function skillFor(gap: EvidenceGap): string {
   return "boundary-push";
 }
 
+function switchTopicDecision(project: Project, topic: TopicThread, reason: string): InterviewDecision {
+  const gap = topic.unresolvedGaps
+    .filter((item) => item.status === "open")
+    .toSorted((left, right) => right.importance - left.importance)[0];
+  return {
+    action: "SWITCH_TOPIC",
+    projectId: project.id,
+    topicId: topic.id,
+    skill: gap ? skillFor(gap) : undefined,
+    targetGap: gap?.type,
+    reason,
+  };
+}
+
 export function startInterview(state: InterviewState): InterviewStep {
   if (state.status !== "draft") throw new Error("Interview has already started");
   const project = selectAnchorProject(state.candidate.projects);
@@ -443,7 +457,7 @@ export function getNextInterviewAction(state: InterviewState): InterviewDecision
       .filter((topic) => topic.status === "candidate" || topic.status === "paused")
       .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
     return nextTopic
-      ? { action: "SWITCH_TOPIC", projectId: activeProject.id, topicId: nextTopic.id, reason: "Selected the highest-information topic." }
+      ? switchTopicDecision(activeProject, nextTopic, "Selected the highest-information topic.")
       : nextProjectOrFinish(state, activeProject.id);
   }
   const gap = activeTopic.unresolvedGaps
@@ -459,7 +473,7 @@ export function getNextInterviewAction(state: InterviewState): InterviewDecision
     .filter((topic) => topic.id !== activeTopic.id && topic.status !== "completed")
     .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
   return nextTopic
-    ? { action: "SWITCH_TOPIC", projectId: activeProject.id, topicId: nextTopic.id, reason: "The current topic is saturated." }
+    ? switchTopicDecision(activeProject, nextTopic, "The current topic is saturated.")
     : nextProjectOrFinish(state, activeProject.id);
 }
 
