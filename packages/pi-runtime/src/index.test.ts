@@ -77,6 +77,10 @@ test("rejects untraceable or out-of-context evidence", () => {
     }] },
     { answerDisposition: "irrelevant", evidence: proposal(context.answer, "support").evidence },
     proposal(context.answer, "weakness", "denial"),
+    proposal(context.answer, "support", "vague"),
+    { ...proposal(context.answer, "invalidate", "denial"), evidence: [{
+      ...proposal(context.answer, "invalidate", "denial").evidence[0], claimIds: [],
+    }] },
   ];
   for (const value of invalid) {
     assert.throws(() => validateEvidenceExtraction(value, context));

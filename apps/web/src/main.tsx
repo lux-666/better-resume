@@ -14,6 +14,12 @@ type Role = {
   competencies: Array<{ id: string; name: string; weight: number }>;
 };
 
+class ApiRequestError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+  }
+}
+
 async function post<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
@@ -21,7 +27,10 @@ async function post<T>(path: string, body: Record<string, unknown> = {}): Promis
     body: JSON.stringify(body),
   });
   const value = (await response.json()) as T | ApiError;
-  if (!response.ok) throw new Error((value as ApiError).message ?? "请求失败");
+  if (!response.ok) {
+    const error = value as ApiError;
+    throw new ApiRequestError(error.message ?? "请求失败", error.retryable ?? false);
+  }
   return value as T;
 }
 
@@ -31,6 +40,7 @@ function App() {
   const [session, setSession] = useState<InterviewStateResponse>();
   const [answer, setAnswer] = useState("");
   const [pendingCommandId, setPendingCommandId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const interview = session?.state;
   const activeProject = interview?.candidate.projects.find((project) => project.status === "active");
@@ -71,6 +81,7 @@ function App() {
     if (!interview || !session?.questionId || !answer.trim()) return;
     const commandId = pendingCommandId || crypto.randomUUID();
     if (!pendingCommandId) setPendingCommandId(commandId);
+    setSubmitting(true);
     try {
       setError("");
       const command: AnswerCommand = {
@@ -84,7 +95,10 @@ function App() {
       setAnswer("");
       setPendingCommandId("");
     } catch (cause) {
+      if (cause instanceof ApiRequestError && !cause.retryable) setPendingCommandId("");
       setError(cause instanceof Error ? cause.message : "提交失败");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -122,12 +136,12 @@ function App() {
               id="answer"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              disabled={Boolean(pendingCommandId)}
+              disabled={Boolean(pendingCommandId) || submitting}
               maxLength={10_000}
               rows={5}
             />
-            <button onClick={submit} disabled={!answer.trim()}>
-              {pendingCommandId ? "重试提交" : "提交回答"}
+            <button onClick={submit} disabled={!answer.trim() || submitting}>
+              {submitting ? "提交中…" : pendingCommandId ? "重试提交" : "提交回答"}
             </button>
           </>}
           {interview?.status === "completed" && <p className="done">本轮证据采集完成。</p>}

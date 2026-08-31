@@ -120,7 +120,7 @@ test("denial contradicts the claim and routes through one clarification", () => 
     evaluatorConfidence: 0.85,
     sourceQuote: "我只负责召回模块",
   }], "substantive");
-  assert.equal(claim.status, "weakened");
+  assert.equal(claim.status, "contradicted");
   assert.equal(clarification.decision.action, "SWITCH_TOPIC");
   assert.equal(state.candidate.projects[0].topics[0].unresolvedGaps
     .find((gap) => gap.type === "contradiction:claim_rag_ownership")?.status, "resolved");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Check } from "typebox/value";
+import { createFixtureCandidate, createInterviewState, startInterview } from "../../interview-core/src/index.ts";
 import { AnswerCommandSchema, ApiErrorSchema, InterviewStepResponseSchema } from "./index.ts";
 
 test("HTTP command and error envelopes are executable contracts", () => {
@@ -16,8 +17,15 @@ test("HTTP command and error envelopes are executable contracts", () => {
     message: "Question is stale",
     retryable: false,
   }), true);
+  const state = createInterviewState("session", "role", createFixtureCandidate());
+  const step = startInterview(state);
+  const response = {
+    state, stateVersion: 1, questionId: "session:1",
+    decision: step.decision, question: step.question, evidence: step.evidence,
+  };
+  assert.equal(Check(InterviewStepResponseSchema, response), true);
   assert.equal(Check(InterviewStepResponseSchema, {
-    state: {}, stateVersion: 2, questionId: "session:2",
-    decision: {}, question: "下一步做了什么？", evidence: [],
-  }), true);
+    ...response,
+    state: { ...state, traces: [{ ...state.traces[0], action: "INVENTED_ACTION" }] },
+  }), false);
 });

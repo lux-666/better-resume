@@ -64,9 +64,13 @@ export function validateEvidenceExtraction(
   if (value.answerDisposition === "irrelevant" && value.evidence.length > 0) {
     throw new EvidenceValidationError("Irrelevant answers cannot produce evidence");
   }
+  if (value.answerDisposition === "vague"
+    && value.evidence.some((evidence) => evidence.polarity !== "weakness")) {
+    throw new EvidenceValidationError("Vague answers can only produce weakness evidence");
+  }
   if ((value.answerDisposition === "denial" || value.answerDisposition === "contradiction")
-    && !value.evidence.some((evidence) => evidence.polarity === "invalidate")) {
-    throw new EvidenceValidationError("Denial or contradiction requires invalidate evidence");
+    && !value.evidence.some((evidence) => evidence.polarity === "invalidate" && evidence.claimIds.length > 0)) {
+    throw new EvidenceValidationError("Denial or contradiction requires claim-linked invalidate evidence");
   }
   for (const evidence of value.evidence) {
     if (evidence.claimIds.some((id) => !claimIds.has(id))) {

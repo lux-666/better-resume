@@ -349,9 +349,14 @@ export function submitAnswer(
   for (const item of evidence) updateClaims(state, project, item);
   const effectiveDisposition = proposedEvidence ? disposition
     : evidence.some((item) => item.polarity === "support") ? "substantive" : "vague";
-  if ((effectiveDisposition === "substantive" || effectiveDisposition === "denial") && evidence.some((item) =>
+  const relevantEvidence = evidence.filter((item) =>
     item.competencyId === gap.competencyId && item.specificity >= 0.5
-  )) gap.status = "resolved";
+  );
+  const resolvesGap = isContradictionGap(gap)
+    ? effectiveDisposition === "substantive" || effectiveDisposition === "denial"
+    : (effectiveDisposition === "substantive" && relevantEvidence.some((item) => item.polarity === "support"))
+      || (effectiveDisposition === "denial" && relevantEvidence.some((item) => item.polarity === "invalidate"));
+  if (relevantEvidence.length > 0 && resolvesGap) gap.status = "resolved";
   if (!isContradictionGap(gap)) {
     for (const item of evidence.filter((candidate) => candidate.polarity === "invalidate")) {
       for (const claimId of item.claimIds) {
@@ -430,15 +435,15 @@ function updateClaims(state: InterviewState, project: Project, evidence: Evidenc
   const claims = [...project.claims, ...state.candidate.claims].filter((claim) => evidence.claimIds.includes(claim.id));
   for (const claim of claims) {
     if (evidence.polarity === "support") {
-      claim.status = "supported";
       claim.supportingEvidenceIds.push(evidence.id);
     } else if (evidence.polarity === "weakness") {
-      claim.status = "weakened";
       (claim.weakEvidenceIds ??= []).push(evidence.id);
     } else {
-      claim.status = "contradicted";
       (claim.contradictingEvidenceIds ??= []).push(evidence.id);
     }
+    claim.status = claim.contradictingEvidenceIds.length > 0 ? "contradicted"
+      : claim.supportingEvidenceIds.length > 0 ? "supported"
+        : "weakened";
   }
 }
 
