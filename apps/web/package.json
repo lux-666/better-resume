@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": { "build": "vite build" },
   "dependencies": {
+    "@better-resume/api-contract": "*",
     "react": "latest",
     "react-dom": "latest"
   }

@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@better-resume/api-contract": "*",
     "@better-resume/interview-core": "*",
     "@better-resume/pi-runtime": "*",
-    "@earendil-works/pi-ai": "0.84.4"
+    "@earendil-works/pi-ai": "0.84.4",
+    "typebox": "1.3.7"
   }
 }

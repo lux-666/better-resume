@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-Web 可以创建、开始和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。API 提供 create/start/answer/state，SQLite 每行保存完整 InterviewState，进程重启后 State 仍可读取；配置 Pi 模型后 Answer 使用已校验的模型 Evidence 提案。
+Web 可以创建、开始和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 已定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
 
-浏览器刷新不会恢复 Session；Answer 没有 questionId、commandId、并发写保护或 Provider 失败恢复；错误尚未完整区分 `409`、`422`、`503` 和 `500`；账户与 Session 所有权尚未建设。
+浏览器刷新仍不会恢复 Session；Provider 失败需要客户端重试同一 Command；多进程并发和账户所有权尚未建设。单进程内的重放、旧问题、旧版本和同 Question 竞争已受保护。
 
 ## HTTP API
 
@@ -33,10 +33,10 @@ GET  /api/interviews/:id/state
 ## 命令一致性
 
 ```text
-{ sessionId, questionId, answer, commandId }
+{ questionId, commandId, expectedStateVersion, answer }
   → validate ownership and state
   → reject consumed question or duplicate command
-  → persist Raw Turn
+  → persist pending Command and raw answer
   → run Agent and Domain transition
   → atomically persist State
   → return State version and next Question
@@ -44,7 +44,7 @@ GET  /api/interviews/:id/state
 
 `commandId` 使网络重试返回同一结果；`questionId` 防止回答旧问题；State version 防止旧状态覆盖新状态。同一 Session 的写命令串行执行，两个并发 Answer 只能有一个成功。
 
-浏览器只保存 `sessionId`，刷新后通过 State API 恢复，不维护第二份权威 InterviewState。
+目标浏览器只保存 `sessionId`，刷新后通过 State API 恢复，不维护第二份权威 InterviewState；当前尚未写入浏览器存储。
 
 ## SQLite
 
@@ -55,14 +55,26 @@ CREATE TABLE sessions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE answer_commands (
+  session_id TEXT,
+  command_id TEXT,
+  question_id TEXT,
+  expected_state_version INTEGER,
+  answer TEXT,
+  status TEXT,
+  response TEXT,
+  PRIMARY KEY (session_id, command_id),
+  UNIQUE (session_id, question_id)
+);
 ```
 
-Session 行是恢复和原子更新边界。分析表只能是可重建投影，不能成为 Project、Evidence 或 Trace 的第二份事实来源。
+Session 行是领域状态边界；Answer Command 行是幂等和 Provider 失败恢复边界。两者在成功 Answer 时原子提交。
 
 持久化规则：
 
 - 创建、Start 和成功 Answer 后保存完整 State；
-- Raw Answer 在 Provider 调用前可恢复；
+- Raw Answer 在 Provider 调用前以 pending Command 保存；
 - Evidence 与 Claim、Competency、Gap、Trace 一起提交；
 - Provider 失败保留可重试的 Raw Turn，不报告成功；
 - Schema Migration 显式执行并保留 Raw Turns。
@@ -71,14 +83,14 @@ Session 行是恢复和原子更新边界。分析表只能是可重建投影，
 
 | 状态码 | 含义 |
 | --- | --- |
-| `400` | Body 格式、类型或长度无效 |
-| `404` | Interview、Role 或路由不存在 |
-| `409` | 命令与 Session 状态冲突 |
-| `422` | 模型输出未通过领域校验 |
-| `503` | Provider 重试后仍不可用 |
-| `500` | 未预期的服务或持久化失败 |
+| `400` | `INVALID_REQUEST`：Body 格式、类型或长度无效 |
+| `404` | `NOT_FOUND`：Interview、Role 或路由不存在 |
+| `409` | `STATE_CONFLICT`：命令与 Session 状态冲突 |
+| `422` | `MODEL_OUTPUT_INVALID`：模型输出未通过校验 |
+| `503` | `PROVIDER_UNAVAILABLE`：Provider 不可用 |
+| `500` | `INTERNAL_ERROR`：未预期的服务或持久化失败 |
 
-错误不返回 Secret、无关候选人数据、完整 Prompt 或 Stack Trace。
+错误统一返回 `{ code, message, retryable }`，不返回 Secret、无关候选人数据、完整 Prompt 或 Stack Trace。
 
 ## 安全边界
 

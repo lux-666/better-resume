@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-`npm test` 当前执行 6 个产品行为测试和 1 个架构结构测试：Core 的固定两轮闭环、Anchor/Gap 路由与外部 Evidence 消费，Pi Runtime 的结构语料、非法 Evidence 拒绝与 Agent 工具提交，以及文档唯一层级、链接和孤儿检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
+`npm test` 当前执行 13 个产品行为测试和 1 个架构结构测试：HTTP 幂等/旧问题拒绝、可执行 API Schema、Core 的固定闭环与矛盾路由、Pi 的语义、单次格式重试与自然问题契约，以及文档层级检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
 
-当前没有真实模型语义回归、HTTP 幂等/并发/恢复测试或 6–10 轮固定 Profile，因此不能对候选人能力结论做有效性评价。
+当前没有真实模型语义回归、HTTP 进程恢复/多进程并发测试或 6–10 轮固定 Profile，因此不能对候选人能力结论做有效性评价。
 
 ## 验证顺序
 
@@ -93,7 +93,7 @@ npm run dev:web
 - [ ] 强、弱、矛盾三个固定 Profile 通过；
 - [ ] Provider 超时与重试不丢失或重复数据；
 - [x] UI 展示 Topic、Gap、Evidence 和 DecisionTrace；
-- [ ] Evidence 与 Question 全部可追溯到 State；
+- [x] Evidence 与 Question 全部可追溯到 State；
 - [ ] Domain、Pi、HTTP 自动化与固定答案走查全部通过。
 
 ## 真人测试协议

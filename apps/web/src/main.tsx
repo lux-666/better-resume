@@ -1,5 +1,11 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import type {
+  AnswerCommand,
+  ApiError,
+  InterviewStateResponse,
+  InterviewStepResponse,
+} from "@better-resume/api-contract";
 import "./style.css";
 
 type Role = {
@@ -8,52 +14,25 @@ type Role = {
   competencies: Array<{ id: string; name: string; weight: number }>;
 };
 
-type InterviewState = {
-  sessionId: string;
-  status: "draft" | "active" | "completed";
-  currentQuestion?: string;
-  candidate: {
-    projects: Array<{
-      id: string;
-      name: string;
-      status: string;
-      topics: Array<{
-        id: string;
-        name: string;
-        status: string;
-        unresolvedGaps: Array<{ type: string; description: string; status: string }>;
-      }>;
-    }>;
-  };
-  evidence: Array<{ id: string; statement: string; sourceQuote: string; polarity: string }>;
-  competencies: Array<{ competencyId: string; score?: number; confidence: number }>;
-  traces: Array<{
-    action: string;
-    reason: string;
-    selectedSkill?: string;
-    targetGap?: string;
-  }>;
-};
-
-type InterviewStep = { state: InterviewState; question?: string };
-
 async function post<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const value = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(value.error ?? "请求失败");
-  return value;
+  const value = (await response.json()) as T | ApiError;
+  if (!response.ok) throw new Error((value as ApiError).message ?? "请求失败");
+  return value as T;
 }
 
 function App() {
   const [role, setRole] = useState<Role>();
   const [candidateName, setCandidateName] = useState("");
-  const [interview, setInterview] = useState<InterviewState>();
+  const [session, setSession] = useState<InterviewStateResponse>();
   const [answer, setAnswer] = useState("");
+  const [pendingCommandId, setPendingCommandId] = useState("");
   const [error, setError] = useState("");
+  const interview = session?.state;
   const activeProject = interview?.candidate.projects.find((project) => project.status === "active");
   const activeTopic = activeProject?.topics.find((topic) => topic.status === "active");
   const openGap = activeTopic?.unresolvedGaps.find((gap) => gap.status === "open");
@@ -72,7 +51,7 @@ function App() {
   async function createInterview() {
     try {
       setError("");
-      setInterview(await post<InterviewState>("/api/interviews", { candidateName }));
+      setSession(await post<InterviewStateResponse>("/api/interviews", { candidateName }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "创建失败");
     }
@@ -82,20 +61,28 @@ function App() {
     if (!interview) return;
     try {
       setError("");
-      const step = await post<InterviewStep>(`/api/interviews/${interview.sessionId}/start`);
-      setInterview(step.state);
+      setSession(await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/start`));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "启动失败");
     }
   }
 
   async function submit() {
-    if (!interview || !answer.trim()) return;
+    if (!interview || !session?.questionId || !answer.trim()) return;
+    const commandId = pendingCommandId || crypto.randomUUID();
+    if (!pendingCommandId) setPendingCommandId(commandId);
     try {
       setError("");
-      const step = await post<InterviewStep>(`/api/interviews/${interview.sessionId}/answer`, { answer });
-      setInterview(step.state);
+      const command: AnswerCommand = {
+        commandId,
+        questionId: session.questionId,
+        expectedStateVersion: session.stateVersion,
+        answer,
+      };
+      const step = await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/answer`, command);
+      setSession(step);
       setAnswer("");
+      setPendingCommandId("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "提交失败");
     }
@@ -128,16 +115,20 @@ function App() {
             <button onClick={start}>开始面试</button>
           </>}
           {interview?.status === "active" && <>
+            {interview.currentAcknowledgement && <p>{interview.currentAcknowledgement}</p>}
             <p className="question">{interview.currentQuestion}</p>
             <label htmlFor="answer">你的回答</label>
             <textarea
               id="answer"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
+              disabled={Boolean(pendingCommandId)}
               maxLength={10_000}
               rows={5}
             />
-            <button onClick={submit} disabled={!answer.trim()}>提交回答</button>
+            <button onClick={submit} disabled={!answer.trim()}>
+              {pendingCommandId ? "重试提交" : "提交回答"}
+            </button>
           </>}
           {interview?.status === "completed" && <p className="done">本轮证据采集完成。</p>}
           {error && <p className="error">{error}</p>}

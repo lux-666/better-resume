@@ -66,6 +66,7 @@ export interface InterviewTurn {
   index: number;
   projectId?: string;
   topicId?: string;
+  acknowledgement?: string;
   question: string;
   answer: string;
   timestamp: string;
@@ -87,6 +88,7 @@ export interface Evidence {
 }
 
 export type EvidenceProposal = Omit<Evidence, "id" | "turnId" | "projectId" | "topicId">;
+export type AnswerDisposition = "substantive" | "vague" | "denial" | "contradiction" | "irrelevant";
 
 export interface CompetencyState {
   competencyId: string;
@@ -106,6 +108,7 @@ export interface DecisionTrace {
   selectedProbe?: string;
   targetGap?: string;
   reason: string;
+  acknowledgement?: string;
   generatedQuestion?: string;
 }
 
@@ -113,6 +116,7 @@ export interface InterviewState {
   sessionId: string;
   roleId: string;
   status: "draft" | "active" | "completed";
+  currentAcknowledgement?: string;
   currentQuestion?: string;
   candidate: CandidateProfile;
   turns: InterviewTurn[];
@@ -255,10 +259,19 @@ function skillFor(gap: EvidenceGap): string {
   return "boundary-push";
 }
 
-function switchTopicDecision(project: Project, topic: TopicThread, reason: string): InterviewDecision {
-  const gap = topic.unresolvedGaps
+function isContradictionGap(gap: EvidenceGap): boolean {
+  return gap.type.startsWith("contradiction:");
+}
+
+function selectOpenGap(topic: TopicThread): EvidenceGap | undefined {
+  return topic.unresolvedGaps
     .filter((item) => item.status === "open")
-    .toSorted((left, right) => right.importance - left.importance)[0];
+    .toSorted((left, right) => Number(isContradictionGap(right)) - Number(isContradictionGap(left))
+      || right.importance - left.importance)[0];
+}
+
+function switchTopicDecision(project: Project, topic: TopicThread, reason: string): InterviewDecision {
+  const gap = selectOpenGap(topic);
   return {
     action: "SWITCH_TOPIC",
     projectId: project.id,
@@ -295,7 +308,7 @@ export function getActiveInterviewContext(state: InterviewState): {
 } {
   const project = state.candidate.projects.find((item) => item.status === "active");
   const topic = project?.topics.find((item) => item.status === "active");
-  const gap = topic?.unresolvedGaps.find((item) => item.status === "open");
+  const gap = topic ? selectOpenGap(topic) : undefined;
   if (!project || !topic || !gap) throw new Error("Active interview context is incomplete");
   return { project, topic, gap };
 }
@@ -304,6 +317,7 @@ export function submitAnswer(
   state: InterviewState,
   answer: string,
   proposedEvidence?: readonly EvidenceProposal[],
+  disposition: AnswerDisposition = "substantive",
 ): InterviewStep {
   if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
   const text = answer.trim();
@@ -315,6 +329,7 @@ export function submitAnswer(
     index: state.turns.length,
     projectId: project.id,
     topicId: topic.id,
+    acknowledgement: state.currentAcknowledgement,
     question: state.currentQuestion,
     answer: text,
     timestamp: new Date().toISOString(),
@@ -332,9 +347,29 @@ export function submitAnswer(
   state.evidence.push(...evidence);
   topic.evidenceIds.push(...evidence.map((item) => item.id));
   for (const item of evidence) updateClaims(state, project, item);
-  if (evidence.some((item) =>
-    item.competencyId === gap.competencyId && item.polarity === "support" && item.specificity >= 0.5
+  const effectiveDisposition = proposedEvidence ? disposition
+    : evidence.some((item) => item.polarity === "support") ? "substantive" : "vague";
+  if ((effectiveDisposition === "substantive" || effectiveDisposition === "denial") && evidence.some((item) =>
+    item.competencyId === gap.competencyId && item.specificity >= 0.5
   )) gap.status = "resolved";
+  if (!isContradictionGap(gap)) {
+    for (const item of evidence.filter((candidate) => candidate.polarity === "invalidate")) {
+      for (const claimId of item.claimIds) {
+        const claim = [...project.claims, ...state.candidate.claims].find((candidate) => candidate.id === claimId);
+        if (!claim) continue;
+        const type = `contradiction:${claim.id}`;
+        const existing = topic.unresolvedGaps.find((candidate) => candidate.type === type);
+        if (existing) existing.status = "open";
+        else topic.unresolvedGaps.push({
+          competencyId: item.competencyId,
+          type,
+          description: `候选人的回答与 Claim“${claim.text}”矛盾，需要澄清准确情况。`,
+          importance: 1,
+          status: "open",
+        });
+      }
+    }
+  }
   if (!topic.unresolvedGaps.some((item) => item.status === "open")) topic.saturation = 1;
   for (const competencyId of new Set(evidence.map((item) => item.competencyId))) {
     updateCompetency(state, competencyId);
@@ -344,9 +379,23 @@ export function submitAnswer(
   activateDecisionTarget(state, decision);
   const question = decision.action === "FINISH" ? undefined : questionFor(state, decision);
   state.status = decision.action === "FINISH" ? "completed" : "active";
+  state.currentAcknowledgement = undefined;
   state.currentQuestion = question;
   state.traces.push(traceFor(decision, question, turn.id));
   return { state, decision, question, evidence };
+}
+
+export function setGeneratedPrompt(
+  state: InterviewState,
+  prompt: { acknowledgement?: string; question: string },
+): void {
+  if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting a question");
+  state.currentAcknowledgement = prompt.acknowledgement;
+  state.currentQuestion = prompt.question;
+  const trace = state.traces.at(-1);
+  if (!trace || trace.action === "FINISH") throw new Error("Interview has no question trace");
+  trace.acknowledgement = prompt.acknowledgement;
+  trace.generatedQuestion = prompt.question;
 }
 
 // ponytail: deterministic demo extraction proves the data flow; replace with Pi structured output before real evaluation.
@@ -383,9 +432,12 @@ function updateClaims(state: InterviewState, project: Project, evidence: Evidenc
     if (evidence.polarity === "support") {
       claim.status = "supported";
       claim.supportingEvidenceIds.push(evidence.id);
-    } else {
+    } else if (evidence.polarity === "weakness") {
       claim.status = "weakened";
       (claim.weakEvidenceIds ??= []).push(evidence.id);
+    } else {
+      claim.status = "contradicted";
+      (claim.contradictingEvidenceIds ??= []).push(evidence.id);
     }
   }
 }
@@ -433,9 +485,14 @@ function questionFor(state: InterviewState, decision: InterviewDecision): string
     ?? state.candidate.projects.find((item) => item.status === "active");
   const topic = project?.topics.find((item) => item.id === decision.topicId)
     ?? project?.topics.find((item) => item.status === "active");
-  const gap = topic?.unresolvedGaps.find((item) => item.status === "open");
+  const gap = topic ? selectOpenGap(topic) : undefined;
   if (!project || !topic || !gap) return "请介绍一个最能体现你能力的项目，以及你本人完成的部分。";
   const followUp = topic.turnIds.length > 0;
+  if (isContradictionGap(gap)) {
+    const claim = [...project.claims, ...state.candidate.claims]
+      .find((item) => gap.type === `contradiction:${item.id}`);
+    return `关于“${claim?.text ?? gap.description}”，现有信息并不一致。请说明准确情况。`;
+  }
   if (gap.type.includes("ownership")) {
     return followUp
       ? `请只选“${project.name}”里一项你本人完成的工作，说明你的具体决策和实现。`
@@ -480,9 +537,13 @@ export function getNextInterviewAction(state: InterviewState): InterviewDecision
       ? switchTopicDecision(activeProject, nextTopic, "Selected the highest-information topic.")
       : nextProjectOrFinish(state, activeProject.id);
   }
-  const gap = activeTopic.unresolvedGaps
-    .filter((item) => item.status === "open")
-    .toSorted((left, right) => right.importance - left.importance)[0];
+  const gap = selectOpenGap(activeTopic);
+  if (gap && isContradictionGap(gap)) {
+    return {
+      action: "CLARIFY_CONTRADICTION", projectId: activeProject.id, topicId: activeTopic.id,
+      skill: "consistency-check", targetGap: gap.type, reason: gap.description,
+    };
+  }
   if (gap && activeTopic.turnIds.length < HARD_MAX_TOPIC_TURNS && activeTopic.saturation < 0.85) {
     return {
       action: "CONTINUE_TOPIC", projectId: activeProject.id, topicId: activeTopic.id,

@@ -6,7 +6,7 @@
 
 目标是一个 Interview Agent 在同一 Session 内持续交流 6–10 轮。每轮利用必要历史，但事实、评分和下一目标始终由 InterviewState 与确定性 Policy 控制。
 
-当前已有 `createInterviewAgent`、只读 `get_interview_state` 工具、顺序工具执行、`EvidenceExtractionSchema` 和 `validateEvidenceExtraction`。配置 `PI_PROVIDER` 与 `PI_MODEL` 后，Answer API 通过结构化 `submit_evidence` 工具消费 Pi 提案；未配置时保留确定性 Demo fallback。模型历史仍不能从 Session 重建。
+当前已有 `createInterviewAgent`、结构化 `submit_evidence` 与 `submit_question`、五类 Answer disposition、Quote/ID 校验和候选人可见问题约束。配置 `PI_PROVIDER` 与 `PI_MODEL` 后，Start 和 Answer 都使用 Pi；未配置时保留确定性 Demo fallback。每次调用从持久化 InterviewState 重建选择性上下文，不保存第二份模型状态。
 
 ## 双状态边界
 
@@ -28,7 +28,7 @@ ConversationWindow 每次调用前从持久化状态构建，可以丢弃和重�
 
 ```text
 validate request and session
-  → persist Raw Turn
+  → persist pending Answer Command and raw answer
   → build selective ConversationWindow
   → Pi extracts Evidence proposal
   → validate schema, IDs, ranges and sourceQuote
@@ -40,7 +40,7 @@ validate request and session
   → return InterviewStep
 ```
 
-命令输入包含 `answer`，并由产品 Session 补充 `questionId` 与 `commandId`。同一 Session 的 Answer 串行执行；已消费 Question 或重复命令不能再次追加 Turn。
+命令输入包含 `answer`、`questionId`、`commandId` 与 `expectedStateVersion`。同一 Question 只能被一个 Command 占用；已完成 Command 重放原响应，不再次追加 Turn。
 
 Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evidence；格式重试复用同一个 Turn。
 
@@ -48,10 +48,11 @@ Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evid
 
 提取器只接收当前 Question 与 Answer、active Project/Topic、相关 Claims、open Gaps、相关 Competency Rubric，以及维持局部语义所需的最近 Turns。
 
-输出结构为：
+输出先分类 `substantive | vague | denial | contradiction | irrelevant`，再提交 Evidence：
 
 ```json
 {
+  "answerDisposition": "substantive",
   "evidence": [
     {
       "claimIds": ["claim_rag_ownership"],
@@ -72,6 +73,7 @@ Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evid
 - Claim 与 Competency ID 必须属于本轮上下文；
 - 三个数值必须是 `[0, 1]` 内的有限数；
 - polarity 只能是 `support | weakness | invalidate`；
+- denial/contradiction 必须包含 invalidate Evidence，irrelevant 不得生成 Evidence；
 - `sourceQuote` 非空且逐字存在于当前 Answer；
 - 非法 item 整体拒绝，不能由服务器改写成事实；
 - Schema 无效时最多格式重试一次；
@@ -79,7 +81,7 @@ Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evid
 
 ## Question Generation
 
-生成器只接收 InterviewDecision、selected Skill、active 上下文、target Gap、相关 Evidence 和避免重复所需的最近 Turns。输出必须是一个主问题，不能泄露 Rubric、假定未验证 Claim、暗示期待答案、组合多个主问题或偏离 Policy 目标。
+生成器只接收 InterviewDecision、active 上下文、target Gap、相关 Evidence 和最近 Questions。输出为可选的中性 `acknowledgement` 与一个 `question`。表达应自然、冷静、专业，但不假装成人类；不能夸奖、判分、确认未验证 Claim、泄露内部术语或组合多个主问题。
 
 Question 只有连同 DecisionTrace 持久化后才成为当前问题。
 

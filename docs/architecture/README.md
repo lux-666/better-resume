@@ -85,6 +85,7 @@ interview-core → no runtime or provider package
 ```text
 apps/web                 候选人界面
 apps/server              HTTP API 与 SQLite Session Store
+packages/api-contract    可执行 HTTP 请求、响应与错误 Schema
 packages/interview-core  领域状态与确定性策略
 packages/pi-runtime      Pi Agent 安全适配层
 roles                    岗位能力与阈值

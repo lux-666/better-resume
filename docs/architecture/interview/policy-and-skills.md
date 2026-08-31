@@ -6,7 +6,7 @@
 
 Anchor Project 已按岗位相关度、能力覆盖、Claim 和技术密度排序；Topic 按预期信息增益选择；Gap 可映射到 Skill ID。固定闭环已运行 Ownership → Evaluation → Finish，并记录 action、targetGap、selectedSkill 与 reason。
 
-仓库目前只有 `ownership-grill`。矛盾澄清、Scenario、General Probe、多 Project 切换、重复惩罚和疲劳控制没有端到端回归。
+仓库目前只有 `ownership-grill` Skill 文件。Core 已验证否认 Claim 后创建 contradiction Gap，并优先执行 `CLARIFY_CONTRADICTION`；Scenario、General Probe、多 Project 切换、重复惩罚和疲劳控制仍没有端到端回归。
 
 ## Session 状态机
 

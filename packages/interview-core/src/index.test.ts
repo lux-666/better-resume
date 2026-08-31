@@ -89,3 +89,48 @@ test("answer transition consumes supplied evidence instead of demo extraction", 
   assert.equal(state.candidate.projects[0].claims[0].status, "supported");
   assert.equal(step.decision.action, "SWITCH_TOPIC");
 });
+
+test("denial contradicts the claim and routes through one clarification", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const denial = submitAnswer(state, "这个模块不是我做的。", [{
+    claimIds: ["claim_rag_ownership"],
+    competencyId: "software_engineering",
+    statement: "候选人否认本人完成该模块。",
+    polarity: "invalidate",
+    strength: 0.9,
+    specificity: 0.9,
+    evaluatorConfidence: 0.9,
+    sourceQuote: "不是我做的",
+  }], "denial");
+
+  const claim = state.candidate.projects[0].claims[0];
+  assert.equal(claim.status, "contradicted");
+  assert.deepEqual(claim.contradictingEvidenceIds, [denial.evidence[0].id]);
+  assert.equal(denial.decision.action, "CLARIFY_CONTRADICTION");
+  assert.equal(denial.decision.skill, "consistency-check");
+
+  const clarification = submitAnswer(state, "准确说法是我只负责召回模块。", [{
+    claimIds: ["claim_rag_ownership"],
+    competencyId: "software_engineering",
+    statement: "候选人澄清了实际负责范围。",
+    polarity: "weakness",
+    strength: 0.8,
+    specificity: 0.9,
+    evaluatorConfidence: 0.85,
+    sourceQuote: "我只负责召回模块",
+  }], "substantive");
+  assert.equal(claim.status, "weakened");
+  assert.equal(clarification.decision.action, "SWITCH_TOPIC");
+  assert.equal(state.candidate.projects[0].topics[0].unresolvedGaps
+    .find((gap) => gap.type === "contradiction:claim_rag_ownership")?.status, "resolved");
+});
+
+test("irrelevant answer adds no evidence and keeps the target gap open", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const step = submitAnswer(state, "我更想聊一下天气。", [], "irrelevant");
+  assert.equal(step.evidence.length, 0);
+  assert.equal(step.decision.action, "CONTINUE_TOPIC");
+  assert.equal(state.candidate.projects[0].topics[0].unresolvedGaps[0].status, "open");
+});

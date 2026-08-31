@@ -7,8 +7,9 @@
 - React / Vite 两轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化
+- 可执行 HTTP Schema、幂等 Answer Command 与旧问题拒绝
 - Anchor Project 与 Hierarchical Policy
-- 可选的 Pi Agent Evidence 提取主链与确定性 Demo fallback
+- 可选的 Pi Evidence 提取、语义分类与自然问题生成主链
 - `ownership-grill` Interview Skill 指令
 
 ## 文档导航
@@ -32,7 +33,7 @@ npm run dev:web
 
 访问 <http://localhost:5173>。
 
-默认使用确定性 Demo 提取。要让 Answer API 使用真实模型：
+默认使用确定性 Demo 提取与问法。要让 Start/Answer 使用真实模型：
 
 ```bash
 PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run dev
@@ -50,6 +51,7 @@ apps/server              HTTP API + SQLite
 apps/web                 React UI
 packages/interview-core  业务状态与确定性策略
 packages/pi-runtime      Pi Agent 安全适配层
+packages/api-contract    HTTP 请求、响应与错误 Schema
 roles                    岗位能力模型
 skills                   Interview Skills（环境中的 .agents 为只读）
 docs/architecture        三级系统架构文档

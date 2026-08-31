@@ -104,6 +104,8 @@ Raw Answer
 
 当前 score 使用 `strength × specificity`，support 将估计推向 100，weakness/invalidate 将估计推向 0；同一 Competency 取平均并四舍五入。confidence 使用 `evaluatorConfidence × specificity` 的平均值，上限 `0.95`。
 
+Claim 更新严格区分 polarity：support → `supported`，weakness → `weakened`，invalidate → `contradicted`。invalidate 同时创建高优先级 contradiction Gap，Policy 必须先澄清再继续普通 Gap。
+
 目标 scorer 必须版本化，并保持 score、confidence 和 coverage 三个独立量。总体结论要求核心 Competency 达到 coverageThreshold、重要矛盾已处理且等级可追溯到 Evidence ID；权重不能补偿核心能力完全无证据。
 
 ## 不变量
