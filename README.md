@@ -25,13 +25,7 @@ npm install
 npm run dev
 ```
 
-另开终端启动 Web：
-
-```bash
-npm run dev:web
-```
-
-访问 <http://localhost:5173>。
+该命令同时启动 API（<http://127.0.0.1:3000>）和 Web（<http://localhost:5173>）。单独调试时使用 `npm run dev:server` 或 `npm run dev:web`。
 
 默认使用确定性 Demo 提取与问法。要让 Start/Answer 使用真实模型：
 

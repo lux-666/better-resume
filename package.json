@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "node --watch --import tsx apps/server/src/index.ts",
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "node --watch --import tsx apps/server/src/index.ts",
     "dev:web": "vite apps/web",
     "start": "node --import tsx apps/server/src/index.ts",
     "eval:model": "node --import tsx apps/server/src/evaluate-profiles.ts",
