@@ -11,6 +11,7 @@ import {
   createFixtureCandidate,
   createInterviewState,
   startInterview,
+  submitAnswer,
 } from "../../interview-core/src/index.ts";
 import {
   extractEvidenceWithAgent,
@@ -38,6 +39,8 @@ const proposal = (
   answerDisposition: "substantive" | "vague" | "denial" | "contradiction" | "irrelevant" = "substantive",
 ) => ({
   answerDisposition,
+  followUpLeads: [],
+  probeCoverage: [],
   evidence: [{
     claimIds: ["claim_ownership"],
     competencyId: "software_engineering",
@@ -65,11 +68,13 @@ test("accepts the evidence contract corpus", () => {
     });
     assert.equal(result.evidence[0].sourceQuote, sourceQuote);
   }
-  assert.deepEqual(validateEvidenceExtraction({ answerDisposition: "irrelevant", evidence: [] }, {
+  assert.deepEqual(validateEvidenceExtraction({
+    answerDisposition: "irrelevant", evidence: [], followUpLeads: [], probeCoverage: [],
+  }, {
     answer: "这个回答与当前问题无关。",
     claimIds: ["claim_ownership"],
     competencyIds: ["software_engineering"],
-  }), { answerDisposition: "irrelevant", evidence: [] });
+  }), { answerDisposition: "irrelevant", evidence: [], followUpLeads: [], probeCoverage: [] });
 });
 
 test("rejects untraceable or out-of-context evidence", () => {
@@ -89,7 +94,10 @@ test("rejects untraceable or out-of-context evidence", () => {
     { ...proposal(context.answer, "support"), evidence: [{
       ...proposal(context.answer, "support").evidence[0], strength: 1.1,
     }] },
-    { answerDisposition: "irrelevant", evidence: proposal(context.answer, "support").evidence },
+    {
+      answerDisposition: "irrelevant", evidence: proposal(context.answer, "support").evidence,
+      followUpLeads: [], probeCoverage: [],
+    },
     proposal(context.answer, "weakness", "denial"),
     proposal(context.answer, "support", "vague"),
     { ...proposal(context.answer, "invalidate", "denial"), evidence: [{
@@ -169,6 +177,24 @@ test("Pi Agent submits one candidate-facing question", async () => {
   }), question);
 });
 
+test("question agent rejects an earlier question and accepts a new one", async () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  const started = startInterview(state);
+  const step = submitAnswer(state, "我负责召回模块的设计和实现，并完成上线验证。");
+  const next = { question: "这个指标使用的测试集是怎么确定的？" };
+  const faux = fauxProvider();
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("submit_question", { question: started.question }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("submit_question", next), { stopReason: "toolUse" }),
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  assert.deepEqual(await generateQuestionWithAgent({
+    model: faux.getModel(), streamFn: models.streamSimple.bind(models), state, decision: step.decision,
+  }), next);
+  assert.equal(faux.state.callCount, 2);
+});
+
 test("question generation stops after one invalid-output retry", async () => {
   const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
   const step = startInterview(state);
@@ -193,12 +219,14 @@ test("question generation stops after one invalid-output retry", async () => {
 
 test("provider operations retry once and do not retry validation failures", async () => {
   let attempts = 0;
+  let retries = 0;
   assert.equal(await withOneProviderRetry(async () => {
     attempts += 1;
     if (attempts === 1) throw new ModelProviderError("temporary outage");
     return "recovered";
-  }), "recovered");
+  }, () => { retries += 1; }), "recovered");
   assert.equal(attempts, 2);
+  assert.equal(retries, 1);
 
   attempts = 0;
   await assert.rejects(withOneProviderRetry(async () => {

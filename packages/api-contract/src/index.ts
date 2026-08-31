@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import type { InterviewState, InterviewStep } from "../../interview-core/src/index.ts";
+import type { InterviewProgress, InterviewState, InterviewStep } from "../../interview-core/src/index.ts";
 
 const ClaimSchema = Type.Object({
   id: Type.String(),
@@ -16,12 +16,42 @@ const ClaimSchema = Type.Object({
   contradictingEvidenceIds: Type.Array(Type.String()),
 }, { additionalProperties: false });
 
+const ProbeKindSchema = Type.Union([
+  Type.Literal("ownership_boundary"), Type.Literal("technical_mechanism"),
+  Type.Literal("decision_alternatives"), Type.Literal("tradeoff"),
+  Type.Literal("failure_diagnosis"), Type.Literal("measurement"),
+  Type.Literal("reflection"), Type.Literal("concrete_example"),
+  Type.Literal("contradiction_clarification"),
+]);
+
+const ProbeCoverageSchema = Type.Object({
+  probe: ProbeKindSchema,
+  status: Type.Union([Type.Literal("partial"), Type.Literal("sufficient")]),
+  sourceQuote: Type.String(),
+}, { additionalProperties: false });
+
+const FollowUpLeadSchema = Type.Object({
+  id: Type.String(),
+  text: Type.String(),
+  sourceQuote: Type.String(),
+  signal: Type.Union([
+    Type.Literal("mechanism"), Type.Literal("decision"), Type.Literal("tradeoff"),
+    Type.Literal("failure"), Type.Literal("measurement"), Type.Literal("other"),
+  ]),
+  probeCoverage: Type.Array(ProbeCoverageSchema),
+  status: Type.Union([
+    Type.Literal("pending"), Type.Literal("active"), Type.Literal("resolved"), Type.Literal("low_value"),
+  ]),
+  lowYieldCount: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });
+
 const EvidenceGapSchema = Type.Object({
   competencyId: Type.String(),
   type: Type.String(),
   description: Type.String(),
   importance: Type.Number(),
   status: Type.Union([Type.Literal("open"), Type.Literal("resolved"), Type.Literal("low_value")]),
+  probeCoverage: Type.Optional(Type.Array(ProbeCoverageSchema)),
 }, { additionalProperties: false });
 
 const TopicThreadSchema = Type.Object({
@@ -35,7 +65,7 @@ const TopicThreadSchema = Type.Object({
   summary: Type.String(),
   evidenceIds: Type.Array(Type.String()),
   unresolvedGaps: Type.Array(EvidenceGapSchema),
-  pendingLeads: Type.Array(Type.String()),
+  pendingLeads: Type.Array(FollowUpLeadSchema),
   relatedCompetencies: Type.Array(Type.String()),
   turnIds: Type.Array(Type.String()),
   saturation: Type.Number(),
@@ -101,6 +131,20 @@ const CompetencyStateSchema = Type.Object({
   contradictoryEvidence: Type.Array(Type.String()),
 }, { additionalProperties: false });
 
+const TaskExecutionTraceSchema = Type.Object({
+  source: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
+  durationMs: Type.Number({ minimum: 0 }),
+  retryCount: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });
+
+const StepExecutionTraceSchema = Type.Object({
+  mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
+  provider: Type.Optional(Type.String()),
+  modelId: Type.Optional(Type.String()),
+  evidence: Type.Optional(TaskExecutionTraceSchema),
+  question: Type.Optional(TaskExecutionTraceSchema),
+}, { additionalProperties: false });
+
 export const InterviewActionSchema = Type.Union([
   Type.Literal("CONTINUE_TOPIC"), Type.Literal("SWITCH_TOPIC"), Type.Literal("SWITCH_PROJECT"),
   Type.Literal("SCENARIO_PROBE"), Type.Literal("CLARIFY_CONTRADICTION"),
@@ -113,11 +157,13 @@ const DecisionTraceSchema = Type.Object({
   projectId: Type.Optional(Type.String()),
   topicId: Type.Optional(Type.String()),
   selectedSkill: Type.Optional(Type.String()),
-  selectedProbe: Type.Optional(Type.String()),
+  selectedProbe: Type.Optional(ProbeKindSchema),
+  selectedLead: Type.Optional(Type.String()),
   targetGap: Type.Optional(Type.String()),
   reason: Type.String(),
   acknowledgement: Type.Optional(Type.String()),
   generatedQuestion: Type.Optional(Type.String()),
+  execution: Type.Optional(StepExecutionTraceSchema),
 }, { additionalProperties: false });
 
 export const InterviewStateSchema = Type.Object({
@@ -138,6 +184,9 @@ export const InterviewDecisionSchema = Type.Object({
   projectId: Type.Optional(Type.String()),
   topicId: Type.Optional(Type.String()),
   skill: Type.Optional(Type.String()),
+  selectedProbe: Type.Optional(ProbeKindSchema),
+  selectedLeadId: Type.Optional(Type.String()),
+  selectedLead: Type.Optional(Type.String()),
   targetGap: Type.Optional(Type.String()),
   reason: Type.String(),
 }, { additionalProperties: false });
@@ -166,9 +215,28 @@ export const ApiErrorSchema = Type.Object({
   retryable: Type.Boolean(),
 }, { additionalProperties: false });
 
+export const RuntimeInfoSchema = Type.Object({
+  mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
+  provider: Type.Optional(Type.String()),
+  modelId: Type.Optional(Type.String()),
+}, { additionalProperties: false });
+
+export const InterviewProgressSchema = Type.Object({
+  stage: Type.Union([Type.Literal("not_started"), Type.Literal("interviewing"), Type.Literal("completed")]),
+  coveragePercent: Type.Integer({ minimum: 0, maximum: 100 }),
+  turns: Type.Object({ completed: Type.Integer({ minimum: 0 }), max: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+  projects: Type.Object({ covered: Type.Integer({ minimum: 0 }), total: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+  topics: Type.Object({ covered: Type.Integer({ minimum: 0 }), total: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+  gaps: Type.Object({ closed: Type.Integer({ minimum: 0 }), total: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+  coreCompetencies: Type.Object({ covered: Type.Integer({ minimum: 0 }), total: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+  contradictionsOpen: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });
+
 export const InterviewStateResponseSchema = Type.Object({
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
+  runtime: RuntimeInfoSchema,
+  progress: InterviewProgressSchema,
   questionId: Type.Optional(Type.String({ minLength: 1 })),
   pendingCommand: Type.Optional(AnswerCommandSchema),
 }, { additionalProperties: false });
@@ -176,6 +244,8 @@ export const InterviewStateResponseSchema = Type.Object({
 export const InterviewStepResponseSchema = Type.Object({
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
+  runtime: RuntimeInfoSchema,
+  progress: InterviewProgressSchema,
   questionId: Type.Optional(Type.String({ minLength: 1 })),
   commandId: Type.Optional(Type.String({ minLength: 1 })),
   decision: InterviewDecisionSchema,
@@ -187,9 +257,13 @@ export type CreateInterviewBody = Static<typeof CreateInterviewBodySchema>;
 export type AnswerCommand = Static<typeof AnswerCommandSchema>;
 export type ApiError = Static<typeof ApiErrorSchema>;
 
+export type RuntimeInfo = Static<typeof RuntimeInfoSchema>;
+
 export interface InterviewStateResponse {
   state: InterviewState;
   stateVersion: number;
+  runtime: RuntimeInfo;
+  progress: InterviewProgress;
   questionId?: string;
   pendingCommand?: AnswerCommand;
 }

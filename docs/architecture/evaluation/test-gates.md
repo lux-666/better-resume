@@ -6,7 +6,7 @@
 
 `npm test` 当前执行 18 个产品行为测试和 1 个架构结构测试：HTTP 六轮进程恢复/租约/幂等/旧问题拒绝、可执行 API Schema、Core 的强/弱/矛盾固定 Profile、Pi 的语义、Skill 加载、Provider/格式单次重试与自然问题契约，以及文档层级检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
 
-确定性 Profile 已分别在 6、6、8 轮完成并产生不同 Claim 结论；当前环境未配置真实 Provider，因此仍不能对模型语义质量或候选人能力结论做有效性评价。
+确定性 Profile 已分别在 6、6、8 轮完成并产生不同 Claim 结论；自动化不调用真实 Provider，尚未执行真实模型 Profile，因此仍不能对模型语义质量或候选人能力结论做有效性评价。
 
 ## 验证顺序
 
@@ -31,9 +31,9 @@ npm run build
 配置 Provider 后逐个执行真实模型 Profile：
 
 ```bash
-PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- strong
-PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- weak
-PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- contradictory
+npm run eval:model -- strong
+npm run eval:model -- weak
+npm run eval:model -- contradictory
 ```
 
 Domain 测试必须覆盖 Anchor、Start、Evidence/Claim 链接、Quote、Competency 更新、Gap 路由、Topic/Project 切换、硬上限和 terminal rejection。
@@ -104,6 +104,7 @@ npm run dev:web
 - [x] 强、弱、矛盾三个确定性固定 Profile 通过；
 - [ ] Provider 超时与重试不丢失或重复数据；
 - [x] UI 展示 Topic、Gap、Evidence 和 DecisionTrace；
+- [x] UI 展示服务端 Progress、显式 Demo/LLM 模式和每轮执行来源；
 - [x] Evidence 与 Question 全部可追溯到 State；
 - [x] Domain、Pi、HTTP 自动化与固定答案走查全部通过。
 

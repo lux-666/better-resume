@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-Anchor Project 已按岗位相关度、能力覆盖、Claim 和技术密度排序；Topic 按预期信息增益选择；Gap 可映射到 Skill ID。固定闭环已运行 Ownership → Evaluation → Failure → Switch Project，并记录 action、targetGap、selectedSkill 与 reason。
+Anchor Project 已按岗位相关度、能力覆盖、Claim 和技术密度排序；Topic 按预期信息增益选择；Gap 可映射到 Skill ID。Answer Analyzer 可提交 grounded Lead 与 Probe coverage，Policy 优先沿 active Lead 选择 uncovered Probe，并记录 action、targetGap、selectedLead、selectedProbe、selectedSkill 与 reason。
 
-`ownership-grill`、`metric-audit`、`failure-forensics` 和 `consistency-check` 均可由 Runtime 加载。Core 已验证多 Project 切换和否认 Claim 后的 `CLARIFY_CONTRADICTION`；Scenario、General Probe、重复惩罚和疲劳控制仍未实现。
+`ownership-grill`、`metric-audit`、`failure-forensics` 和 `consistency-check` 均可由 Runtime 加载。Core 已验证多 Project 切换、否认 Claim 后的 `CLARIFY_CONTRADICTION`、Lead 连续追问和两次 low-yield 退出；Question Validator 已拦截精确重复。Scenario、General Probe、语义重复惩罚和疲劳控制仍未实现。
 
 ## Session 状态机
 
@@ -41,14 +41,15 @@ FINISH
 
 ## Policy
 
-Policy 只读取 active Project/Topic、open Gaps、Evidence、Competency coverage、矛盾、Turn 数与饱和度。优先顺序为：
+Policy 只读取 active Project/Topic、open Gaps、Lead/Probe coverage、Evidence、Competency coverage、矛盾、Turn 数与饱和度。优先顺序为：
 
 1. 澄清影响结论的矛盾；
-2. 继续当前高价值 Gap；
-3. 切换到当前 Project 的高信息 Topic；
-4. 切换到剩余高价值 Project；
-5. 用 Scenario 补核心 Competency；
-6. 没有高价值 Gap 或达到硬上限时结束。
+2. active Lead 仍有 uncovered Probe 且未连续两次 low-yield 时继续该 Lead；
+3. 继续当前高价值 Gap；
+4. 切换到当前 Project 的高信息 Topic；
+5. 切换到剩余高价值 Project；
+6. 用 Scenario 补核心 Competency；
+7. 没有高价值 Gap 或达到硬上限时结束。
 
 当前硬上限是整个 Session 15 个 Turn、单 Topic 6 个 Turn；Topic saturation 达到 `0.85` 后不再继续。
 
@@ -61,7 +62,7 @@ Anchor Project 的当前价值函数为：
 10% technology density
 ```
 
-跨 Topic 的目标效用由 competency importance、gap importance、project relevance、expected information gain、conversation continuity、repetition penalty 和 fatigue penalty 组成。模型不能改写这些权重或停止条件。
+当前跨 Topic 排序使用 expected information gain，跨 Project 排序使用上面的固定价值函数。动态 utility、多个 Lead 排序、conversation continuity 分值、semantic repetition penalty 和 fatigue penalty 留到下一阶段；模型不能改写现有路由或停止条件。
 
 ## Skill
 

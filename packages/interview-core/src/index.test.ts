@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createFixtureCandidate, createInterviewState, getNextInterviewAction, selectAnchorProject,
+  createFixtureCandidate, createInterviewState, getInterviewProgress, getNextInterviewAction, selectAnchorProject,
   startInterview, submitAnswer,
   type CandidateProfile, type Project,
 } from "./index.ts";
@@ -135,4 +135,66 @@ test("irrelevant answer adds no evidence and keeps the target gap open", () => {
   assert.equal(step.evidence.length, 0);
   assert.equal(step.decision.action, "CONTINUE_TOPIC");
   assert.equal(state.candidate.projects[0].topics[0].unresolvedGaps[0].status, "open");
+});
+
+test("policy follows an extracted lead by probe and exits after two low-yield answers", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const evidence = (sourceQuote: string) => [{
+    claimIds: ["claim_rag_ownership"],
+    competencyId: "software_engineering",
+    statement: "候选人说明了召回模块。",
+    polarity: "support" as const,
+    strength: 0.8,
+    specificity: 0.9,
+    evaluatorConfidence: 0.8,
+    sourceQuote,
+  }];
+  const first = submitAnswer(state, "我负责 RAG 的召回模块，用的是 hybrid search。", evidence("我负责 RAG 的召回模块"), "substantive", {
+    probeCoverage: [{ probe: "ownership_boundary", status: "sufficient", sourceQuote: "我负责 RAG 的召回模块" }],
+    followUpLeads: [{
+      text: "hybrid search", sourceQuote: "hybrid search", signal: "mechanism",
+      probeCoverage: [{ probe: "technical_mechanism", status: "partial", sourceQuote: "hybrid search" }],
+    }],
+  });
+  assert.equal(first.decision.selectedLead, "hybrid search");
+  assert.equal(first.decision.selectedProbe, "technical_mechanism");
+  assert.match(first.question ?? "", /hybrid search/);
+
+  const second = submitAnswer(state, "BM25 和 embedding 各召回 50 条，然后通过 RRF 融合。", evidence("RRF 融合"), "substantive", {
+    probeCoverage: [{ probe: "technical_mechanism", status: "sufficient", sourceQuote: "RRF 融合" }],
+  });
+  assert.equal(second.decision.selectedLead, "hybrid search");
+  assert.equal(second.decision.selectedProbe, "decision_alternatives");
+
+  submitAnswer(state, "记不清了。", [], "vague", { probeCoverage: [] });
+  const exit = submitAnswer(state, "还是记不清。", [], "vague", { probeCoverage: [] });
+  const lead = state.candidate.projects[0].topics[0].pendingLeads[0];
+  assert.equal(lead.status, "low_value");
+  assert.equal(lead.lowYieldCount, 2);
+  assert.equal(exit.decision.action, "SWITCH_TOPIC");
+  assert.equal(exit.decision.targetGap, "metric_definition");
+});
+
+test("progress reports evidence coverage separately from the turn limit", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  assert.deepEqual(getInterviewProgress(state, ["software_engineering", "evaluation"]), {
+    stage: "not_started",
+    coveragePercent: 0,
+    turns: { completed: 0, max: 15 },
+    projects: { covered: 0, total: 2 },
+    topics: { covered: 0, total: 6 },
+    gaps: { closed: 0, total: 6 },
+    coreCompetencies: { covered: 0, total: 2 },
+    contradictionsOpen: 0,
+  });
+  startInterview(state);
+  submitAnswer(state, "我负责检索架构设计，并独立实现了召回模块和 reranker 接入。");
+  const progress = getInterviewProgress(state, ["software_engineering", "evaluation"]);
+  assert.equal(progress.stage, "interviewing");
+  assert.equal(progress.coveragePercent, 25);
+  assert.deepEqual(progress.projects, { covered: 1, total: 2 });
+  assert.deepEqual(progress.topics, { covered: 1, total: 6 });
+  assert.deepEqual(progress.gaps, { closed: 1, total: 6 });
+  assert.deepEqual(progress.coreCompetencies, { covered: 1, total: 2 });
 });

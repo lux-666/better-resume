@@ -16,7 +16,8 @@ InterviewState
 │   └── Project[]
 │       ├── Claim[]
 │       └── TopicThread[]
-│           └── EvidenceGap[]
+│           ├── EvidenceGap[] + ProbeCoverage
+│           └── FollowUpLead[] + ProbeCoverage
 ├── InterviewTurn[]
 ├── Evidence[]
 ├── CompetencyState[]
@@ -39,7 +40,7 @@ Claim 是来自 Resume 或 Answer 的可证伪陈述，保存来源、文本、�
 
 ### TopicThread 与 EvidenceGap
 
-TopicThread 是 Project 内有边界的调查线索，保存 Turn/Evidence 引用、open Gaps、相关 Competency、饱和度与预期信息增益。EvidenceGap 描述能力判断仍缺少的具体证据。
+TopicThread 是 Project 内有边界的调查线索，保存 Turn/Evidence 引用、open Gaps、pending Leads、相关 Competency、饱和度与预期信息增益。EvidenceGap 描述能力判断仍缺少的具体证据；FollowUpLead 保存候选人回答中值得继续追问的具体对象。ProbeCoverage 用 `partial | sufficient` 记录某个提问角度已被回答到什么程度。
 
 ### InterviewTurn
 
@@ -74,7 +75,7 @@ sourceQuote
 
 ### DecisionTrace
 
-Trace 保存 action、Project、Topic、Gap、Skill、Probe、reason 和 generatedQuestion，回答“为什么问这个问题”。模型与 Prompt 版本由运行记录补充，不改变领域判断。
+Trace 保存 action、Project、Topic、Gap、Lead、Skill、Probe、reason 和 generatedQuestion，回答“为什么问这个问题”。模型与 Prompt 版本由运行记录补充，不改变领域判断。
 
 ## Role Pack
 

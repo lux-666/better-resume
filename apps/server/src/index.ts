@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { Check } from "typebox/value";
 import {
   AnswerCommandSchema,
@@ -12,15 +11,20 @@ import {
   type ApiError,
   type InterviewStateResponse,
   type InterviewStepResponse,
+  type RuntimeInfo,
 } from "../../../packages/api-contract/src/index.ts";
 import {
   createFixtureCandidate,
   createInterviewState,
+  getInterviewProgress,
   setGeneratedPrompt,
+  setStepExecution,
   startInterview,
   submitAnswer,
   type InterviewState,
   type InterviewStep,
+  type StepExecutionTrace,
+  type TaskExecutionTrace,
 } from "../../../packages/interview-core/src/index.ts";
 import {
   EvidenceValidationError,
@@ -30,6 +34,7 @@ import {
   ModelProviderError,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
+import { createModelRuntime } from "./model-runtime.ts";
 
 const port = Number(process.env.PORT ?? 3000);
 const databasePath = resolve(process.env.DATABASE_PATH ?? "data/better-resume.db");
@@ -73,15 +78,23 @@ function ensureAnswerCommandColumn(name: string, definition: string): void {
 ensureAnswerCommandColumn("lease_owner", "lease_owner TEXT");
 ensureAnswerCommandColumn("lease_expires_at", "lease_expires_at INTEGER");
 
+type RolePack = {
+  id: string;
+  name: string;
+  competencies: Array<{ id: string; name: string; weight: number; core: boolean }>;
+};
+
 const role = JSON.parse(
   readFileSync(resolve("roles/llm_engineer/role.json"), "utf8"),
-) as unknown;
-const piProvider = process.env.PI_PROVIDER;
-const piModelId = process.env.PI_MODEL;
-if (Boolean(piProvider) !== Boolean(piModelId)) throw new Error("PI_PROVIDER and PI_MODEL must be set together");
-const models = piProvider ? builtinModels() : undefined;
-const model = piProvider && piModelId ? models?.getModel(piProvider, piModelId) : undefined;
-if (piProvider && !model) throw new Error(`Unknown Pi model: ${piProvider}/${piModelId}`);
+) as RolePack;
+const runtime = createModelRuntime();
+const { model, streamFn } = runtime;
+const runtimeInfo: RuntimeInfo = {
+  mode: runtime.mode,
+  ...(runtime.provider ? { provider: runtime.provider } : {}),
+  ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+};
+const coreCompetencyIds = role.competencies.filter((competency) => competency.core).map((competency) => competency.id);
 const commandLeaseOwner = randomUUID();
 // ponytail: a fixed lease avoids a heartbeat; raise this if provider calls can legitimately exceed it.
 const commandLeaseMs = Number(process.env.COMMAND_LEASE_MS ?? 120_000);
@@ -165,6 +178,8 @@ function stateResponse(state: InterviewState, includePendingCommand = true): Int
   return {
     state,
     stateVersion: stateVersion(state),
+    runtime: runtimeInfo,
+    progress: getInterviewProgress(state, coreCompetencyIds),
     questionId: questionId(state),
     pendingCommand: includePendingCommand ? pendingCommand(state) : undefined,
   };
@@ -209,7 +224,12 @@ function claimAnswerCommand(state: InterviewState, command: AnswerCommand): Inte
       throw new HttpError(409, "STATE_CONFLICT", "commandId was already used with different input");
     }
     if (existing.status === "completed" && existing.response) {
-      return JSON.parse(existing.response) as InterviewStepResponse;
+      const replay = JSON.parse(existing.response) as InterviewStepResponse;
+      return {
+        ...replay,
+        runtime: runtimeInfo,
+        progress: getInterviewProgress(replay.state, coreCompetencyIds),
+      };
     }
     assertCurrentCommand(state, command);
     const claimed = database.prepare(`
@@ -289,17 +309,43 @@ function releaseAnswerCommand(state: InterviewState, commandId: string): void {
   `).run(state.sessionId, commandId, commandLeaseOwner);
 }
 
-async function phraseQuestion(step: InterviewStep): Promise<void> {
-  if (!model || !models || step.decision.action === "FINISH") return;
-  const prompt = await withOneProviderRetry(() => generateQuestionWithAgent({
+const demoTask = (): TaskExecutionTrace => ({ source: "demo", durationMs: 0, retryCount: 0 });
+
+async function observeModelCall<T>(operation: () => Promise<T>): Promise<{ value: T; trace: TaskExecutionTrace }> {
+  let retryCount = 0;
+  const startedAt = performance.now();
+  const value = await withOneProviderRetry(operation, () => { retryCount += 1; });
+  return {
+    value,
+    trace: { source: "llm", durationMs: Math.round(performance.now() - startedAt), retryCount },
+  };
+}
+
+function executionTrace(
+  evidence?: TaskExecutionTrace,
+  question?: TaskExecutionTrace,
+): StepExecutionTrace {
+  return {
+    ...runtimeInfo,
+    evidence,
+    question,
+  };
+}
+
+async function phraseQuestion(step: InterviewStep): Promise<TaskExecutionTrace | undefined> {
+  if (step.decision.action === "FINISH") return undefined;
+  if (runtime.mode === "demo") return demoTask();
+  if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
+  const result = await observeModelCall(() => generateQuestionWithAgent({
     model,
-    streamFn: models.streamSimple.bind(models),
+    streamFn,
     state: step.state,
     decision: step.decision,
     skillInstruction: step.decision.skill ? loadInterviewSkill(step.decision.skill) : undefined,
   }));
-  setGeneratedPrompt(step.state, prompt);
-  step.question = prompt.question;
+  setGeneratedPrompt(step.state, result.value);
+  step.question = result.value.question;
+  return result.trace;
 }
 
 const server = createServer(async (request, response) => {
@@ -308,7 +354,7 @@ const server = createServer(async (request, response) => {
     const pathname = new URL(request.url ?? "/", `http://${request.headers.host}`).pathname;
 
     if (method === "GET" && pathname === "/api/health") {
-      return json(response, 200, { ok: true });
+      return json(response, 200, { ok: true, runtime: runtimeInfo });
     }
     if (method === "GET" && pathname === "/api/roles") {
       return json(response, 200, [role]);
@@ -337,7 +383,8 @@ const server = createServer(async (request, response) => {
       const state = loadState(startMatch[1]);
       if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
       const step = startInterview(state);
-      await phraseQuestion(step);
+      const questionExecution = await phraseQuestion(step);
+      setStepExecution(state, executionTrace(undefined, questionExecution));
       saveState(state);
       return json(response, 200, stepResponse(step));
     }
@@ -355,21 +402,30 @@ const server = createServer(async (request, response) => {
       if (replay) return json(response, 200, replay);
       let completed = false;
       try {
-        const extraction = model && models
-          ? await withOneProviderRetry(() => extractEvidenceWithAgent({
+        let extraction;
+        let evidenceExecution: TaskExecutionTrace;
+        if (runtime.mode === "llm") {
+          if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
+          const result = await observeModelCall(() => extractEvidenceWithAgent({
               model,
-              streamFn: models.streamSimple.bind(models),
+              streamFn,
               state,
               answer: command.answer,
-            }))
-          : undefined;
+            }));
+          extraction = result.value;
+          evidenceExecution = result.trace;
+        } else {
+          evidenceExecution = demoTask();
+        }
         const step = submitAnswer(
           state,
           command.answer,
           extraction?.evidence,
           extraction?.answerDisposition,
+          extraction,
         );
-        await phraseQuestion(step);
+        const questionExecution = await phraseQuestion(step);
+        setStepExecution(state, executionTrace(evidenceExecution, questionExecution));
         const result = stepResponse(step, command.commandId);
         completeAnswerCommand(state, command.commandId, result);
         completed = true;
@@ -405,5 +461,6 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Better Resume API: http://127.0.0.1:${port}`);
+  const runtimeLabel = runtime.mode === "llm" ? `${runtime.provider}/${runtime.modelId}` : "demo";
+  console.log(`Better Resume API: http://127.0.0.1:${port} (${runtimeLabel})`);
 });

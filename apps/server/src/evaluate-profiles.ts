@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import {
   createFixtureCandidate,
   createInterviewState,
@@ -19,18 +18,17 @@ import {
   loadInterviewSkill,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
+import { createModelRuntime } from "./model-runtime.ts";
 
 const requested = process.argv[2] ?? "strong";
 if (requested === "--help") {
   console.log("Usage: npm run eval:model -- strong|weak|contradictory|all");
   process.exit(0);
 }
-const provider = process.env.PI_PROVIDER;
-const modelId = process.env.PI_MODEL;
-if (!provider || !modelId) throw new Error("PI_PROVIDER and PI_MODEL are required");
-const models = builtinModels();
-const model = models.getModel(provider, modelId);
-if (!model) throw new Error(`Unknown Pi model: ${provider}/${modelId}`);
+const { provider, modelId, model, streamFn } = createModelRuntime();
+if (!provider || !modelId || !model || !streamFn) throw new Error("LLM configuration is required");
+const configuredModel = model;
+const configuredStreamFn = streamFn;
 const profiles = requested === "all"
   ? Object.keys(fixedProfiles) as FixedProfileName[]
   : [requested as FixedProfileName];
@@ -41,8 +39,8 @@ if (profiles.some((profile) => !(profile in fixedProfiles))) {
 async function phraseQuestion(step: InterviewStep): Promise<void> {
   if (step.decision.action === "FINISH") return;
   const prompt = await withOneProviderRetry(() => generateQuestionWithAgent({
-    model,
-    streamFn: models.streamSimple.bind(models),
+    model: configuredModel,
+    streamFn: configuredStreamFn,
     state: step.state,
     decision: step.decision,
     skillInstruction: step.decision.skill ? loadInterviewSkill(step.decision.skill) : undefined,
@@ -62,12 +60,12 @@ for (const profile of profiles) {
   while (state.status === "active" && state.turns.length < 10) {
     const { answer } = fixedProfileResponse(profile, state);
     const extraction = await withOneProviderRetry(() => extractEvidenceWithAgent({
-      model,
-      streamFn: models.streamSimple.bind(models),
+      model: configuredModel,
+      streamFn: configuredStreamFn,
       state,
       answer,
     }));
-    step = submitAnswer(state, answer, extraction.evidence, extraction.answerDisposition);
+    step = submitAnswer(state, answer, extraction.evidence, extraction.answerDisposition, extraction);
     await phraseQuestion(step);
   }
 

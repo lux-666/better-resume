@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Check } from "typebox/value";
-import { createFixtureCandidate, createInterviewState, startInterview } from "../../interview-core/src/index.ts";
+import { createFixtureCandidate, createInterviewState, getInterviewProgress, startInterview } from "../../interview-core/src/index.ts";
 import {
   AnswerCommandSchema,
   ApiErrorSchema,
@@ -24,14 +24,19 @@ test("HTTP command and error envelopes are executable contracts", () => {
   }), true);
   const state = createInterviewState("session", "role", createFixtureCandidate());
   const step = startInterview(state);
+  const runtime = { mode: "demo" as const };
+  const progress = getInterviewProgress(state, ["software_engineering"]);
   const response = {
     state, stateVersion: 1, questionId: "session:1",
+    runtime, progress,
     decision: step.decision, question: step.question, evidence: step.evidence,
   };
   assert.equal(Check(InterviewStepResponseSchema, response), true);
   assert.equal(Check(InterviewStateResponseSchema, {
     state,
     stateVersion: 1,
+    runtime,
+    progress,
     questionId: "session:1",
     pendingCommand: {
       commandId: "command-1",

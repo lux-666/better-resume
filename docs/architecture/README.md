@@ -14,15 +14,17 @@ Better Resume 是证据驱动的自适应面试系统。输出不是对对话的
 简历 Claim
   → Evidence Gap
   → 确定性 Policy
-  → Skill / Probe
+  → Lead / Probe / Skill
   → Question
   → Raw Answer
-  → Evidence
-  → Claim / Competency / Gap 更新
+  → Evidence / Probe coverage / follow-up Leads
+  → Claim / Competency / Gap / Lead 更新
   → 下一次 Policy 决策
 ```
 
 模型负责语言理解与表达；确定性应用代码负责状态、评分、路由、停止条件和持久化。
+
+运行事实与产品进度是两个独立投影：DecisionTrace 记录每轮 Evidence/Question 的实际执行来源；InterviewProgress 从持久化 State 与 Role Pack 计算，不由浏览器或模型估算。
 
 ## 系统地图
 
@@ -76,7 +78,9 @@ interview-core → no runtime or provider package
 - Raw Turn 与已接受 Evidence 只追加，不覆盖原文。
 - 每条 Evidence 的 `sourceQuote` 必须是对应 Answer 的原文子串。
 - Pi 只能提出结构化结果，不能直接修改领域状态。
+- Demo 与 LLM 是显式运行模式；配置 LLM 后调用失败必须返回错误，不能静默退回 Demo。
 - API 是请求校验和持久化边界；只有 API 写入 Session。
+- InterviewProgress 只从 State 与 Role Pack 派生，不作为第二份可写状态。
 - 同一状态必须产生同一 Policy 决策。
 - 已完成的 Session 拒绝新的 Answer。
 

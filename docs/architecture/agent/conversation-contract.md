@@ -6,7 +6,7 @@
 
 目标是一个 Interview Agent 在同一 Session 内持续交流 6–10 轮。每轮利用必要历史，但事实、评分和下一目标始终由 InterviewState 与确定性 Policy 控制。
 
-当前已有 `createInterviewAgent`、结构化 `submit_evidence` 与 `submit_question`、五类 Answer disposition、Quote/ID 校验和候选人可见问题约束。配置 `PI_PROVIDER` 与 `PI_MODEL` 后，Start 和 Answer 都使用 Pi；未配置时保留确定性 Demo fallback。每次调用从持久化 InterviewState 重建选择性上下文，不保存第二份模型状态。
+当前已有 `createInterviewAgent`、结构化 `submit_evidence` 与 `submit_question`、五类 Answer disposition、Lead/Probe 连续追问、Quote/ID 校验和候选人可见问题约束。根目录 `.env` 配置模型后，Start 和 Answer 都使用 Pi；未配置时保留确定性 Demo fallback。每次调用从持久化 InterviewState 重建选择性上下文，不保存第二份模型状态。
 
 ## 双状态边界
 
@@ -15,7 +15,8 @@ InterviewState                      ConversationWindow
 authoritative                       derived, disposable
 ├── raw Turns                       ├── system instruction
 ├── accepted Evidence               ├── Role rubric subset
-├── Claims / Gaps                   ├── active Project / Topic / Gap
+├── Claims / Gaps / Leads           ├── active Project / Topic / Gap
+├── Probe coverage                  ├── active Lead / selected Probe
 ├── CompetencyState                 ├── relevant Evidence
 └── DecisionTrace                   └── recent Turns + older summary
 ```
@@ -30,10 +31,10 @@ ConversationWindow 每次调用前从持久化状态构建，可以丢弃和重�
 validate request and session
   → persist pending Answer Command and raw answer
   → build selective ConversationWindow
-  → Pi extracts Evidence proposal
+  → Pi analyzes Evidence, Probe coverage and follow-up Leads
   → validate schema, IDs, ranges and sourceQuote
-  → Core updates Claim / Competency / Gap
-  → Policy selects target and Skill
+  → Core updates Claim / Competency / Gap / Lead
+  → Policy selects Gap, Lead, Probe and Skill
   → Pi generates one Question
   → append DecisionTrace
   → atomically persist State
@@ -64,6 +65,19 @@ Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evid
       "evaluatorConfidence": 0.8,
       "sourceQuote": "我负责检索架构设计，并独立实现……"
     }
+  ],
+  "probeCoverage": [
+    { "probe": "ownership_boundary", "status": "sufficient", "sourceQuote": "我负责检索架构设计" }
+  ],
+  "followUpLeads": [
+    {
+      "text": "hybrid search",
+      "sourceQuote": "hybrid search",
+      "signal": "mechanism",
+      "probeCoverage": [
+        { "probe": "technical_mechanism", "status": "partial", "sourceQuote": "hybrid search" }
+      ]
+    }
   ]
 }
 ```
@@ -75,13 +89,28 @@ Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evid
 - polarity 只能是 `support | weakness | invalidate`；
 - denial/contradiction 必须包含 invalidate Evidence，irrelevant 不得生成 Evidence；
 - `sourceQuote` 非空且逐字存在于当前 Answer；
+- Lead 只标识值得追的回答线索，不能携带换 Topic、关 Gap、评分或结束指令；
+- Probe coverage 只能是 `partial | sufficient`，并且同样要求逐字 Quote；
 - 非法 item 整体拒绝，不能由服务器改写成事实；
 - Schema 无效时最多格式重试一次；
 - 零条 Evidence 是合法结果。
 
+## Conversation Policy
+
+```text
+contradiction
+  → contradiction_clarification
+active Lead + uncovered Probe + lowYieldCount < 2
+  → continue the same Lead
+otherwise
+  → existing Gap / Topic / Project / Finish policy
+```
+
+Gap 决定为什么问，Lead 决定追什么，Probe 决定从哪个角度问，Question Agent 只决定怎么说。Lead 连续两次没有新增 Probe coverage 后标记为 `low_value`，Policy 退出该 Lead。Gap 关闭、Topic/Project 切换、评分和结束仍由 Core 决定。
+
 ## Question Generation
 
-生成器只接收 InterviewDecision、active 上下文、target Gap、相关 Evidence 和最近 Questions。输出为可选的中性 `acknowledgement` 与一个 `question`。表达应自然、冷静、专业，但不假装成人类；不能夸奖、判分、确认未验证 Claim、泄露内部术语或组合多个主问题。
+生成器只接收 InterviewDecision、active 上下文、target Gap、selected Lead/Probe、上一条 Answer、相关 Evidence 和最近 Questions。输出为可选的中性 `acknowledgement` 与一个 `question`。表达应自然、冷静、专业，但不假装成人类；不能夸奖、判分、确认未验证 Claim、泄露内部术语或组合多个主问题。
 
 Question 只有连同 DecisionTrace 持久化后才成为当前问题。
 
@@ -94,6 +123,8 @@ Question 只有连同 DecisionTrace 持久化后才成为当前问题。
 - 一个真实模型完成 6–10 轮固定 Profile；
 - 进程重启后继续同一 Session；
 - 每轮只有一个不重复的主问题；
+- active Lead 的问题必须沿 selected Probe 引用上一轮回答中的具体线索；
+- 同一 Lead 连续两次 low-yield 后必须退出；
 - 每条 Evidence 有逐字 Quote；
 - 每个 Question 有 Policy、Gap、Skill 和 Trace；
 - 超时重试不丢失或重复 Turn；

@@ -20,6 +20,33 @@ export interface EvidenceGap {
   description: string;
   importance: number;
   status: "open" | "resolved" | "low_value";
+  probeCoverage?: ProbeCoverage[];
+}
+
+export type ProbeKind =
+  | "ownership_boundary" | "technical_mechanism" | "decision_alternatives"
+  | "tradeoff" | "failure_diagnosis" | "measurement" | "reflection" | "concrete_example"
+  | "contradiction_clarification";
+
+export type LeadSignal = "mechanism" | "decision" | "tradeoff" | "failure" | "measurement" | "other";
+
+export interface ProbeCoverage {
+  probe: ProbeKind;
+  status: "partial" | "sufficient";
+  sourceQuote: string;
+}
+
+export interface FollowUpLeadProposal {
+  text: string;
+  sourceQuote: string;
+  signal: LeadSignal;
+  probeCoverage: ProbeCoverage[];
+}
+
+export interface FollowUpLead extends FollowUpLeadProposal {
+  id: string;
+  status: "pending" | "active" | "resolved" | "low_value";
+  lowYieldCount: number;
 }
 
 export interface TopicThread {
@@ -30,7 +57,7 @@ export interface TopicThread {
   summary: string;
   evidenceIds: string[];
   unresolvedGaps: EvidenceGap[];
-  pendingLeads: string[];
+  pendingLeads: FollowUpLead[];
   relatedCompetencies: string[];
   turnIds: string[];
   saturation: number;
@@ -99,17 +126,44 @@ export interface CompetencyState {
   contradictoryEvidence: string[];
 }
 
+export interface TaskExecutionTrace {
+  source: "demo" | "llm";
+  durationMs: number;
+  retryCount: number;
+}
+
+export interface StepExecutionTrace {
+  mode: "demo" | "llm";
+  provider?: string;
+  modelId?: string;
+  evidence?: TaskExecutionTrace;
+  question?: TaskExecutionTrace;
+}
+
 export interface DecisionTrace {
   turnId?: string;
   action: InterviewAction;
   projectId?: string;
   topicId?: string;
   selectedSkill?: string;
-  selectedProbe?: string;
+  selectedProbe?: ProbeKind;
+  selectedLead?: string;
   targetGap?: string;
   reason: string;
   acknowledgement?: string;
   generatedQuestion?: string;
+  execution?: StepExecutionTrace;
+}
+
+export interface InterviewProgress {
+  stage: "not_started" | "interviewing" | "completed";
+  coveragePercent: number;
+  turns: { completed: number; max: number };
+  projects: { covered: number; total: number };
+  topics: { covered: number; total: number };
+  gaps: { closed: number; total: number };
+  coreCompetencies: { covered: number; total: number };
+  contradictionsOpen: number;
 }
 
 export interface InterviewState {
@@ -130,6 +184,9 @@ export interface InterviewDecision {
   projectId?: string;
   topicId?: string;
   skill?: string;
+  selectedProbe?: ProbeKind;
+  selectedLeadId?: string;
+  selectedLead?: string;
   targetGap?: string;
   reason: string;
 }
@@ -144,10 +201,43 @@ export interface InterviewStep {
 const HARD_MAX_TURNS = 15;
 const HARD_MAX_TOPIC_TURNS = 6;
 
+export interface AnswerAnalysisDetails {
+  followUpLeads?: readonly FollowUpLeadProposal[];
+  probeCoverage?: readonly ProbeCoverage[];
+}
+
 export function createInterviewState(sessionId: string, roleId: string, candidate: CandidateProfile): InterviewState {
   return {
     sessionId, roleId, status: "draft", candidate,
     turns: [], evidence: [], competencies: [], traces: [],
+  };
+}
+
+export function getInterviewProgress(
+  state: InterviewState,
+  coreCompetencyIds: readonly string[],
+): InterviewProgress {
+  const projects = state.candidate.projects;
+  const topics = projects.flatMap((project) => project.topics);
+  const gaps = topics.flatMap((topic) => topic.unresolvedGaps);
+  const coveredCoreCompetencies = coreCompetencyIds.filter((competencyId) => {
+    const competency = state.competencies.find((item) => item.competencyId === competencyId);
+    return competency !== undefined && competency.evidenceIds.length > 0 && competency.confidence >= 0.3;
+  }).length;
+  const closedGaps = gaps.filter((gap) => gap.status !== "open").length;
+  const coverageTotal = gaps.length + coreCompetencyIds.length;
+  return {
+    stage: state.status === "draft" ? "not_started" : state.status === "completed" ? "completed" : "interviewing",
+    coveragePercent: coverageTotal === 0 ? 0 : Math.round((closedGaps + coveredCoreCompetencies) / coverageTotal * 100),
+    turns: { completed: state.turns.length, max: HARD_MAX_TURNS },
+    projects: {
+      covered: projects.filter((project) => project.topics.some((topic) => topic.turnIds.length > 0)).length,
+      total: projects.length,
+    },
+    topics: { covered: topics.filter((topic) => topic.turnIds.length > 0).length, total: topics.length },
+    gaps: { closed: closedGaps, total: gaps.length },
+    coreCompetencies: { covered: coveredCoreCompetencies, total: coreCompetencyIds.length },
+    contradictionsOpen: gaps.filter((gap) => isContradictionGap(gap) && gap.status === "open").length,
   };
 }
 
@@ -387,6 +477,61 @@ function selectOpenGap(topic: TopicThread): EvidenceGap | undefined {
       || right.importance - left.importance)[0];
 }
 
+function gapProbe(gap: EvidenceGap): ProbeKind {
+  if (isContradictionGap(gap)) return "contradiction_clarification";
+  if (gap.type.includes("ownership")) return "ownership_boundary";
+  if (gap.type.includes("metric")) return "measurement";
+  if (gap.type.includes("failure")) return "failure_diagnosis";
+  return "concrete_example";
+}
+
+function leadProbeSequence(lead: FollowUpLead): ProbeKind[] {
+  const first: Record<LeadSignal, ProbeKind> = {
+    mechanism: "technical_mechanism",
+    decision: "decision_alternatives",
+    tradeoff: "tradeoff",
+    failure: "failure_diagnosis",
+    measurement: "measurement",
+    other: "technical_mechanism",
+  };
+  return [...new Set([
+    first[lead.signal],
+    "decision_alternatives" as const,
+    lead.signal === "failure" ? "failure_diagnosis" as const : "tradeoff" as const,
+    "measurement" as const,
+  ])];
+}
+
+function mergeProbeCoverage(target: ProbeCoverage[], incoming: readonly ProbeCoverage[]): boolean {
+  let changed = false;
+  for (const coverage of incoming) {
+    const existing = target.find((item) => item.probe === coverage.probe);
+    if (!existing) {
+      target.push({ ...coverage });
+      changed = true;
+    } else if (existing.status === "partial" && coverage.status === "sufficient") {
+      Object.assign(existing, coverage);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function uncoveredProbe(lead: FollowUpLead): ProbeKind | undefined {
+  return leadProbeSequence(lead).find((probe) =>
+    !lead.probeCoverage.some((coverage) => coverage.probe === probe && coverage.status === "sufficient")
+  );
+}
+
+function usableLead(topic: TopicThread): FollowUpLead | undefined {
+  return topic.pendingLeads.find((lead) => lead.status === "active" && lead.lowYieldCount < 2 && uncoveredProbe(lead))
+    ?? topic.pendingLeads.find((lead) => lead.status === "pending" && lead.lowYieldCount < 2 && uncoveredProbe(lead));
+}
+
+function normalizeLeadText(value: string): string {
+  return value.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+
 function switchTopicDecision(project: Project, topic: TopicThread, reason: string): InterviewDecision {
   const gap = selectOpenGap(topic);
   return {
@@ -394,6 +539,7 @@ function switchTopicDecision(project: Project, topic: TopicThread, reason: strin
     projectId: project.id,
     topicId: topic.id,
     skill: gap ? skillFor(gap) : undefined,
+    selectedProbe: gap ? gapProbe(gap) : undefined,
     targetGap: gap?.type,
     reason,
   };
@@ -425,7 +571,8 @@ export function getActiveInterviewContext(state: InterviewState): {
 } {
   const project = state.candidate.projects.find((item) => item.status === "active");
   const topic = project?.topics.find((item) => item.status === "active");
-  const gap = topic ? selectOpenGap(topic) : undefined;
+  const targetGap = state.traces.at(-1)?.targetGap;
+  const gap = topic && (topic.unresolvedGaps.find((item) => item.type === targetGap) ?? selectOpenGap(topic));
   if (!project || !topic || !gap) throw new Error("Active interview context is incomplete");
   return { project, topic, gap };
 }
@@ -435,11 +582,13 @@ export function submitAnswer(
   answer: string,
   proposedEvidence?: readonly EvidenceProposal[],
   disposition: AnswerDisposition = "substantive",
+  details?: AnswerAnalysisDetails,
 ): InterviewStep {
   if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
   const text = answer.trim();
   if (!text) throw new Error("Answer cannot be empty");
   const { project, topic, gap } = getActiveInterviewContext(state);
+  const activeLead = topic.pendingLeads.find((lead) => lead.status === "active");
 
   const turn: InterviewTurn = {
     id: globalThis.crypto.randomUUID(),
@@ -469,11 +618,52 @@ export function submitAnswer(
   const relevantEvidence = evidence.filter((item) =>
     item.competencyId === gap.competencyId && item.specificity >= 0.5
   );
-  const resolvesGap = isContradictionGap(gap)
-    ? effectiveDisposition === "substantive" || effectiveDisposition === "denial"
-    : (effectiveDisposition === "substantive" && relevantEvidence.length > 0)
-      || (effectiveDisposition === "denial" && relevantEvidence.some((item) => item.polarity === "invalidate"));
-  if (relevantEvidence.length > 0 && resolvesGap) gap.status = "resolved";
+  const analysis = details ?? (proposedEvidence ? {} : extractDemoAnalysis(text));
+  const selectedProbe = state.traces.at(-1)?.selectedProbe;
+  const probeCoverage = analysis.probeCoverage?.length
+    ? analysis.probeCoverage
+    : selectedProbe && relevantEvidence.length > 0
+        && effectiveDisposition !== "vague" && effectiveDisposition !== "irrelevant"
+      ? [{ probe: selectedProbe, status: "sufficient" as const, sourceQuote: relevantEvidence[0].sourceQuote }]
+      : [];
+  if (activeLead) {
+    const gainedCoverage = mergeProbeCoverage(activeLead.probeCoverage, probeCoverage);
+    if (gainedCoverage) activeLead.lowYieldCount = 0;
+    else activeLead.lowYieldCount += 1;
+    if (activeLead.lowYieldCount >= 2) activeLead.status = "low_value";
+    else if (!uncoveredProbe(activeLead)) activeLead.status = "resolved";
+  } else {
+    mergeProbeCoverage(gap.probeCoverage ??= [], probeCoverage);
+  }
+  for (const proposal of analysis.followUpLeads ?? []) {
+    const duplicate = topic.pendingLeads.find((lead) =>
+      normalizeLeadText(lead.text) === normalizeLeadText(proposal.text)
+    );
+    if (duplicate) {
+      mergeProbeCoverage(duplicate.probeCoverage, proposal.probeCoverage);
+      if (!uncoveredProbe(duplicate)) duplicate.status = "resolved";
+    } else {
+      const lead: FollowUpLead = {
+        ...proposal,
+        probeCoverage: proposal.probeCoverage.map((coverage) => ({ ...coverage })),
+        id: globalThis.crypto.randomUUID(),
+        status: "pending",
+        lowYieldCount: 0,
+      };
+      if (!uncoveredProbe(lead)) lead.status = "resolved";
+      topic.pendingLeads.push(lead);
+    }
+  }
+  const primaryProbeCovered = gap.probeCoverage?.some((coverage) =>
+    coverage.probe === gapProbe(gap) && coverage.status === "sufficient"
+  ) ?? false;
+  const hasRelevantEvidence = state.evidence.some((item) =>
+    topic.evidenceIds.includes(item.id) && item.competencyId === gap.competencyId && item.specificity >= 0.5
+  );
+  if (isContradictionGap(gap)) {
+    if (relevantEvidence.length > 0
+      && (effectiveDisposition === "substantive" || effectiveDisposition === "denial")) gap.status = "resolved";
+  } else if (primaryProbeCovered && hasRelevantEvidence && !usableLead(topic)) gap.status = "resolved";
   if (!isContradictionGap(gap)) {
     for (const item of evidence.filter((candidate) => candidate.polarity === "invalidate")) {
       for (const claimId of item.claimIds) {
@@ -520,6 +710,12 @@ export function setGeneratedPrompt(
   trace.generatedQuestion = prompt.question;
 }
 
+export function setStepExecution(state: InterviewState, execution: StepExecutionTrace): void {
+  const trace = state.traces.at(-1);
+  if (!trace) throw new Error("Interview has no decision trace");
+  trace.execution = execution;
+}
+
 // ponytail: deterministic demo extraction proves the data flow; replace with Pi structured output before real evaluation.
 function extractDemoEvidence(
   answer: string,
@@ -547,6 +743,25 @@ function extractDemoEvidence(
     specificity,
     evaluatorConfidence: 0.65,
     sourceQuote: answer,
+  };
+}
+
+// ponytail: demo-only phrase matching; configured LLM mode supplies structured leads.
+function extractDemoAnalysis(answer: string): AnswerAnalysisDetails {
+  const failure = answer.match(/([^，。；]{2,40}(?:不稳定|失败|故障|异常|问题)[^，。；]{0,30})/);
+  const mechanism = answer.match(/(?:使用|用了|用的是|采用)\s*([^，。；]{2,40})/i);
+  const match = failure ?? mechanism;
+  if (!match) return {};
+  const sourceQuote = match[1].trim();
+  const signal: LeadSignal = failure ? "failure" : "mechanism";
+  const probe: ProbeKind = failure ? "failure_diagnosis" : "technical_mechanism";
+  return {
+    followUpLeads: [{
+      text: sourceQuote,
+      sourceQuote,
+      signal,
+      probeCoverage: [{ probe, status: "partial", sourceQuote }],
+    }],
   };
 }
 
@@ -602,6 +817,14 @@ function activateDecisionTarget(state: InterviewState, decision: InterviewDecisi
     }
     return;
   }
+  if (decision.selectedLeadId && decision.projectId && decision.topicId) {
+    const topic = state.candidate.projects.find((item) => item.id === decision.projectId)
+      ?.topics.find((item) => item.id === decision.topicId);
+    for (const lead of topic?.pendingLeads ?? []) {
+      if (lead.status === "active") lead.status = "pending";
+      if (lead.id === decision.selectedLeadId) lead.status = "active";
+    }
+  }
   if ((decision.action !== "SWITCH_TOPIC" && decision.action !== "SWITCH_PROJECT")
     || !decision.projectId || !decision.topicId) return;
   const project = state.candidate.projects.find((item) => item.id === decision.projectId);
@@ -626,13 +849,22 @@ function questionFor(state: InterviewState, decision: InterviewDecision): string
     ?? state.candidate.projects.find((item) => item.status === "active");
   const topic = project?.topics.find((item) => item.id === decision.topicId)
     ?? project?.topics.find((item) => item.status === "active");
-  const gap = topic ? selectOpenGap(topic) : undefined;
+  const gap = topic && (topic.unresolvedGaps.find((item) => item.type === decision.targetGap) ?? selectOpenGap(topic));
+  const lead = topic?.pendingLeads.find((item) => item.id === decision.selectedLeadId);
   if (!project || !topic || !gap) return "请介绍一个最能体现你能力的项目，以及你本人完成的部分。";
   const followUp = topic.turnIds.length > 0;
   if (isContradictionGap(gap)) {
     const claim = [...project.claims, ...state.candidate.claims]
       .find((item) => gap.type === `contradiction:${item.id}`);
     return `关于“${claim?.text ?? gap.description}”，现有信息并不一致。请说明准确情况。`;
+  }
+  if (lead) {
+    if (decision.selectedProbe === "technical_mechanism") return `你提到“${lead.text}”，它具体是怎么实现的？`;
+    if (decision.selectedProbe === "decision_alternatives") return `关于“${lead.text}”，哪个关键比较让你最终选择了这个方案？`;
+    if (decision.selectedProbe === "tradeoff") return `采用“${lead.text}”带来的主要代价是什么？`;
+    if (decision.selectedProbe === "failure_diagnosis") return `你如何确认“${lead.text}”的根因？`;
+    if (decision.selectedProbe === "measurement") return `你用什么结果判断“${lead.text}”确实有效？`;
+    if (decision.selectedProbe === "reflection") return `复盘“${lead.text}”，你现在会改变哪项设计？`;
   }
   if (gap.type.includes("ownership")) {
     return followUp
@@ -652,6 +884,8 @@ function traceFor(decision: InterviewDecision, question?: string, turnId?: strin
     projectId: decision.projectId,
     topicId: decision.topicId,
     selectedSkill: decision.skill,
+    selectedProbe: decision.selectedProbe,
+    selectedLead: decision.selectedLead,
     targetGap: decision.targetGap,
     reason: decision.reason,
     generatedQuestion: question,
@@ -682,13 +916,25 @@ export function getNextInterviewAction(state: InterviewState): InterviewDecision
   if (gap && isContradictionGap(gap)) {
     return {
       action: "CLARIFY_CONTRADICTION", projectId: activeProject.id, topicId: activeTopic.id,
-      skill: "consistency-check", targetGap: gap.type, reason: gap.description,
+      skill: "consistency-check", selectedProbe: "contradiction_clarification",
+      targetGap: gap.type, reason: gap.description,
+    };
+  }
+  const lead = usableLead(activeTopic);
+  const contextGap = gap ?? activeTopic.unresolvedGaps.find((item) => item.type === state.traces.at(-1)?.targetGap);
+  const selectedProbe = lead && uncoveredProbe(lead);
+  if (lead && selectedProbe && contextGap
+    && activeTopic.turnIds.length < HARD_MAX_TOPIC_TURNS && activeTopic.saturation < 0.85) {
+    return {
+      action: "CONTINUE_TOPIC", projectId: activeProject.id, topicId: activeTopic.id,
+      skill: skillFor(contextGap), selectedProbe, selectedLeadId: lead.id, selectedLead: lead.text,
+      targetGap: contextGap.type, reason: `Continue the active lead: ${lead.text}`,
     };
   }
   if (gap && activeTopic.turnIds.length < HARD_MAX_TOPIC_TURNS && activeTopic.saturation < 0.85) {
     return {
       action: "CONTINUE_TOPIC", projectId: activeProject.id, topicId: activeTopic.id,
-      skill: skillFor(gap), targetGap: gap.type, reason: gap.description,
+      skill: skillFor(gap), selectedProbe: gapProbe(gap), targetGap: gap.type, reason: gap.description,
     };
   }
   const nextTopic = activeProject.topics
@@ -713,6 +959,7 @@ function nextProjectOrFinish(state: InterviewState, currentProjectId: string): I
     projectId: project.id,
     topicId: topic?.id,
     skill: gap ? skillFor(gap) : undefined,
+    selectedProbe: gap ? gapProbe(gap) : undefined,
     targetGap: gap?.type,
     reason: "The current project has no useful open topic.",
   };

@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-Web 可以创建、开始、刷新恢复和完成多 Project 六轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 逐字段定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
+Web 可以创建、开始、刷新恢复和完成多 Project 面试，并展示证据覆盖进度、显式 Demo/LLM 模式、Project、Topic、Gap、Lead、Probe、Decision、Skill、Evidence 和 Competency。TypeBox 逐字段定义 Create、Answer、State/Step、Runtime、Progress 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
 
-浏览器通过本地 `sessionId` 从 State API 恢复 Session 和 pending Answer；Provider 基础设施失败自动重试一次，随后可由客户端继续重试同一 Command；SQLite 租约保护多进程 Answer。账户所有权尚未建设。
+浏览器通过本地 `sessionId` 从 State API 恢复 Session 和 pending Answer，也可主动清除本地引用并新建 Session。Provider 基础设施失败自动重试一次，随后可由客户端继续重试同一 Command；配置 LLM 后不允许静默退回 Demo。SQLite 租约保护多进程 Answer。账户所有权尚未建设。
 
 ## HTTP API
 
@@ -21,7 +21,7 @@ GET  /api/interviews/:id/state
 
 | 路由 | 成功语义 |
 | --- | --- |
-| `GET /api/health` | 服务存活状态 |
+| `GET /api/health` | 服务存活状态与非敏感 Runtime 信息 |
 | `GET /api/roles` | 可选择的 Role Pack |
 | `POST /api/interviews` | 创建 `draft` Session，返回 `201` |
 | `POST /api/interviews/:id/start` | 选择 Anchor Project 并返回首个 InterviewStep |
@@ -29,6 +29,19 @@ GET  /api/interviews/:id/state
 | `GET /api/interviews/:id/state` | 返回持久化的完整 State |
 
 创建接口当前接受最长 100 字符的可选 `candidateName`；Answer 最长 10,000 字符；JSON Body 最大 1 MB。
+
+State 与 Step 响应都包含：
+
+```text
+runtime: { mode, provider?, modelId? }
+progress: {
+  stage, coveragePercent, turns,
+  projects, topics, gaps, coreCompetencies,
+  contradictionsOpen
+}
+```
+
+`coveragePercent` 由已关闭 Gap 与达到最低可信度的核心 Competency Evidence 共同计算。轮数单独展示，不能冒充能力覆盖度。Progress 每次响应时从 InterviewState 与 Role Pack 派生，不持久化第二份状态。
 
 ## 命令一致性
 
@@ -108,9 +121,9 @@ Session 行是领域状态边界；Answer Command 行是幂等、Provider 失败
 
 ## 观测
 
-每轮记录 sessionId、turnId、action、Project、Topic、Gap、Skill、Probe、provider、modelId、Prompt/Schema 版本、latency、retryCount、Evidence 接受/拒绝数和结果。
+成功提交的每轮 DecisionTrace 已记录 Demo/LLM 模式、provider、modelId，以及 Evidence/Question 各自的 source、latency 和 retryCount。失败调用只通过错误响应暴露，尚未进入独立的持久化运行事件表；Prompt/Schema 版本和 Evidence 拒绝数也尚未记录。
 
-最低运行指标包括请求错误率、Provider 错误率、模型延迟、重试次数、Evidence 拒绝率、Session 完成率和平均 Turn 数。日志通过 ID 关联 Session 原文，不重复存储候选人敏感文本。
+目标运行指标仍包括请求错误率、Provider 错误率、模型延迟、重试次数、Evidence 拒绝率、Session 完成率和平均 Turn 数。日志通过 ID 关联 Session 原文，不重复存储候选人敏感文本。
 
 ## 验收
 

@@ -35,14 +35,20 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
         ...process.env,
         DATABASE_PATH: databasePath,
         PORT: String(port),
+        LLM_PROVIDER: "",
+        LLM_MODEL: "",
+        GENE_AGENT_LLM_PROVIDER: "",
+        GENE_AGENT_LLM_MODEL: "",
         PI_PROVIDER: "",
         PI_MODEL: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let stderr = "";
+    apiProcess.stderr.on("data", (chunk) => { stderr += chunk; });
     await new Promise<void>((resolveReady, reject) => {
       apiProcess.stdout.once("data", () => resolveReady());
-      apiProcess.once("exit", (code) => reject(new Error(`API exited before startup: ${code}`)));
+      apiProcess.once("exit", (code) => reject(new Error(`API exited before startup: ${code}\n${stderr}`)));
     });
     return apiProcess;
   };
@@ -73,10 +79,13 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   const created = await post("/api/interviews", { candidateName: "Contract" });
   assert.equal(created.response.status, 201);
   assert.equal(created.body.stateVersion, 0);
+  assert.deepEqual(created.body.runtime, { mode: "demo" });
+  assert.equal(created.body.progress.coveragePercent, 0);
   const sessionId = created.body.state.sessionId as string;
 
   const started = await post(`/api/interviews/${sessionId}/start`, {});
   assert.equal(started.body.stateVersion, 1);
+  assert.equal(started.body.state.traces[0].execution.question.source, "demo");
   const command = {
     commandId: "command-1",
     questionId: started.body.questionId,
@@ -121,6 +130,8 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   assert.equal(first.response.status, 200);
   assert.equal(first.body.pendingCommand, undefined);
   assert.equal(first.body.state.turns.length, 1);
+  assert.equal(first.body.state.traces.at(-1).execution.evidence.source, "demo");
+  assert.equal(first.body.progress.projects.covered, 1);
 
   await stop();
   child = await launch();
@@ -139,14 +150,11 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   assert.equal(stale.body.code, "STATE_CONFLICT");
 
   let current = recovered.body;
-  const remainingAnswers = [
-    "准确率按固定测试集上的成功回答比例计算，基线是未接入 reranker 的版本。",
-    "我通过日志定位了一次线上故障的根因，修复后补了回归测试和告警。",
-    "我负责客服 Agent 的状态机设计、工具调用实现和上线验证。",
-    "延迟按固定流量窗口统计，并与同一批请求的历史基线对照。",
-    "我通过调用日志复现工具故障，定位超时根因并实现重试和监控。",
-  ];
-  for (const [index, answer] of remainingAnswers.entries()) {
+  for (let index = 0; current.state.status === "active" && index < 14; index += 1) {
+    const targetGap = current.state.traces.at(-1).targetGap as string;
+    const answer = targetGap.includes("metric")
+      ? "指标按固定测试集上的成功比例计算，并与同一批样本的历史基线对照。"
+      : "我负责这部分的具体设计、实现、上线验证和回归检查。";
     const next = await post(`/api/interviews/${sessionId}/answer`, {
       commandId: `long-command-${index}`,
       questionId: current.questionId,
@@ -157,8 +165,9 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     current = next.body;
   }
   assert.equal(current.state.status, "completed");
-  assert.equal(current.state.turns.length, 6);
-  assert.equal(new Set(current.state.turns.map((turn: { question: string }) => turn.question)).size, 6);
+  assert.ok(current.state.turns.length >= 6 && current.state.turns.length <= 15);
+  assert.equal(new Set(current.state.turns.map((turn: { question: string }) => turn.question)).size,
+    current.state.turns.length);
   assert.ok(current.state.traces.some((trace: { action: string }) => trace.action === "SWITCH_PROJECT"));
   assert.ok(current.state.candidate.projects.flatMap((project: { claims: Array<{ status: string }> }) => project.claims)
     .every((claim: { status: string }) => claim.status === "supported"));

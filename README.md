@@ -5,6 +5,7 @@
 ## 当前可运行内容
 
 - React / Vite 多 Project 六轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
+- 显式 Demo/LLM 运行状态、每轮模型执行 Trace 与服务端证据覆盖进度
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化、进程重启恢复与跨进程 Answer 租约
 - 可执行 HTTP Schema、幂等 Answer Command、旧问题拒绝与单次 Provider 重试
@@ -25,18 +26,19 @@ npm install
 npm run dev
 ```
 
-该命令同时启动 API（<http://127.0.0.1:3000>）和 Web（<http://localhost:5173>）。单独调试时使用 `npm run dev:server` 或 `npm run dev:web`。
+该命令同时启动 API（<http://127.0.0.1:3000>）和 Web（<http://localhost:5173>）。页面会明确显示 Demo 或 LLM 运行模式；单独调试时使用 `npm run dev:server` 或 `npm run dev:web`。
 
-默认使用确定性 Demo 提取与问法。要让 Start/Answer 使用真实模型：
+默认使用确定性 Demo 提取与问法。要让 Start/Answer 使用真实模型，复制 `.env.example` 为 `.env`，填写 API 配置后直接启动：
 
 ```bash
-PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run dev
+cp .env.example .env
+npm run dev
 ```
 
 同一配置可运行单个真实模型固定 Profile；参数可取 `strong`、`weak`、`contradictory` 或 `all`：
 
 ```bash
-PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- strong
+npm run eval:model -- strong
 ```
 
 ```bash
