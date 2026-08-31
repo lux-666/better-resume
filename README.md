@@ -6,8 +6,8 @@
 
 - React / Vite 两轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
 - 原生 Node HTTP API：创建、开始、回答与状态读取
-- 原生 `node:sqlite` Session 持久化
-- 可执行 HTTP Schema、幂等 Answer Command 与旧问题拒绝
+- 原生 `node:sqlite` Session 持久化、进程重启恢复与跨进程 Answer 租约
+- 可执行 HTTP Schema、幂等 Answer Command、旧问题拒绝与单次 Provider 重试
 - Anchor Project 与 Hierarchical Policy
 - 可选的 Pi Evidence 提取、语义分类与自然问题生成主链
 - `ownership-grill` Interview Skill 指令

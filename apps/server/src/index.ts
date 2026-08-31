@@ -27,6 +27,7 @@ import {
   extractEvidenceWithAgent,
   generateQuestionWithAgent,
   ModelProviderError,
+  withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -34,6 +35,7 @@ const databasePath = resolve(process.env.DATABASE_PATH ?? "data/better-resume.db
 mkdirSync(dirname(databasePath), { recursive: true });
 
 const database = new DatabaseSync(databasePath);
+database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
 database.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -49,11 +51,26 @@ database.exec(`
     answer TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('pending', 'completed')),
     response TEXT,
+    lease_owner TEXT,
+    lease_expires_at INTEGER,
     created_at TEXT NOT NULL,
     PRIMARY KEY (session_id, command_id),
     UNIQUE (session_id, question_id)
   );
 `);
+
+function ensureAnswerCommandColumn(name: string, definition: string): void {
+  const hasColumn = () => (database.prepare("PRAGMA table_info(answer_commands)").all() as Array<{ name: string }>)
+    .some((column) => column.name === name);
+  if (hasColumn()) return;
+  try {
+    database.exec(`ALTER TABLE answer_commands ADD COLUMN ${definition}`);
+  } catch (error) {
+    if (!hasColumn()) throw error;
+  }
+}
+ensureAnswerCommandColumn("lease_owner", "lease_owner TEXT");
+ensureAnswerCommandColumn("lease_expires_at", "lease_expires_at INTEGER");
 
 const role = JSON.parse(
   readFileSync(resolve("roles/llm_engineer/role.json"), "utf8"),
@@ -64,7 +81,10 @@ if (Boolean(piProvider) !== Boolean(piModelId)) throw new Error("PI_PROVIDER and
 const models = piProvider ? builtinModels() : undefined;
 const model = piProvider && piModelId ? models?.getModel(piProvider, piModelId) : undefined;
 if (piProvider && !model) throw new Error(`Unknown Pi model: ${piProvider}/${piModelId}`);
-const inFlightCommands = new Set<string>();
+const commandLeaseOwner = randomUUID();
+// ponytail: a fixed lease avoids a heartbeat; raise this if provider calls can legitimately exceed it.
+const commandLeaseMs = Number(process.env.COMMAND_LEASE_MS ?? 120_000);
+if (!Number.isFinite(commandLeaseMs) || commandLeaseMs <= 0) throw new Error("COMMAND_LEASE_MS must be positive");
 
 class HttpError extends Error {
   constructor(
@@ -121,13 +141,37 @@ function questionId(state: InterviewState): string | undefined {
   return state.currentQuestion ? `${state.sessionId}:${stateVersion(state)}` : undefined;
 }
 
-function stateResponse(state: InterviewState): InterviewStateResponse {
-  return { state, stateVersion: stateVersion(state), questionId: questionId(state) };
+function pendingCommand(state: InterviewState): AnswerCommand | undefined {
+  const row = database.prepare(`
+    SELECT command_id, question_id, expected_state_version, answer
+    FROM answer_commands
+    WHERE session_id = ? AND question_id = ? AND status = 'pending'
+  `).get(state.sessionId, questionId(state) ?? "") as {
+    command_id: string;
+    question_id: string;
+    expected_state_version: number;
+    answer: string;
+  } | undefined;
+  return row ? {
+    commandId: row.command_id,
+    questionId: row.question_id,
+    expectedStateVersion: row.expected_state_version,
+    answer: row.answer,
+  } : undefined;
+}
+
+function stateResponse(state: InterviewState, includePendingCommand = true): InterviewStateResponse {
+  return {
+    state,
+    stateVersion: stateVersion(state),
+    questionId: questionId(state),
+    pendingCommand: includePendingCommand ? pendingCommand(state) : undefined,
+  };
 }
 
 function stepResponse(step: InterviewStep, commandId?: string): InterviewStepResponse {
   return {
-    ...stateResponse(step.state),
+    ...stateResponse(step.state, false),
     commandId,
     decision: step.decision,
     question: step.question,
@@ -167,6 +211,20 @@ function claimAnswerCommand(state: InterviewState, command: AnswerCommand): Inte
       return JSON.parse(existing.response) as InterviewStepResponse;
     }
     assertCurrentCommand(state, command);
+    const claimed = database.prepare(`
+      UPDATE answer_commands SET lease_owner = ?, lease_expires_at = ?
+      WHERE session_id = ? AND command_id = ? AND status = 'pending'
+        AND (lease_owner IS NULL OR lease_expires_at <= ?)
+    `).run(
+      commandLeaseOwner,
+      Date.now() + commandLeaseMs,
+      state.sessionId,
+      command.commandId,
+      Date.now(),
+    );
+    if (Number(claimed.changes) !== 1) {
+      throw new HttpError(409, "STATE_CONFLICT", "Answer command is already in progress", true);
+    }
     return undefined;
   }
 
@@ -174,18 +232,32 @@ function claimAnswerCommand(state: InterviewState, command: AnswerCommand): Inte
   try {
     database.prepare(`
       INSERT INTO answer_commands (
-        session_id, command_id, question_id, expected_state_version, answer, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
+        session_id, command_id, question_id, expected_state_version, answer,
+        status, lease_owner, lease_expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `).run(
       state.sessionId,
       command.commandId,
       command.questionId,
       command.expectedStateVersion,
       command.answer,
+      commandLeaseOwner,
+      Date.now() + commandLeaseMs,
       new Date().toISOString(),
     );
-  } catch {
-    throw new HttpError(409, "STATE_CONFLICT", "Question already has an answer command in progress");
+  } catch (error) {
+    const competing = database.prepare(`
+      SELECT command_id FROM answer_commands WHERE session_id = ? AND question_id = ?
+    `).get(state.sessionId, command.questionId) as { command_id: string } | undefined;
+    if (competing) {
+      throw new HttpError(
+        409,
+        "STATE_CONFLICT",
+        "Question already has an answer command in progress",
+        competing.command_id === command.commandId,
+      );
+    }
+    throw error;
   }
   return undefined;
 }
@@ -193,11 +265,15 @@ function claimAnswerCommand(state: InterviewState, command: AnswerCommand): Inte
 function completeAnswerCommand(state: InterviewState, commandId: string, body: InterviewStepResponse): void {
   database.exec("BEGIN IMMEDIATE");
   try {
+    const completed = database.prepare(`
+      UPDATE answer_commands
+      SET status = 'completed', response = ?, lease_owner = NULL, lease_expires_at = NULL
+      WHERE session_id = ? AND command_id = ? AND status = 'pending' AND lease_owner = ?
+    `).run(JSON.stringify(body), state.sessionId, commandId, commandLeaseOwner);
+    if (Number(completed.changes) !== 1) {
+      throw new HttpError(409, "STATE_CONFLICT", "Answer command lease was lost", true);
+    }
     saveState(state);
-    database.prepare(`
-      UPDATE answer_commands SET status = 'completed', response = ?
-      WHERE session_id = ? AND command_id = ?
-    `).run(JSON.stringify(body), state.sessionId, commandId);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -205,14 +281,21 @@ function completeAnswerCommand(state: InterviewState, commandId: string, body: I
   }
 }
 
+function releaseAnswerCommand(state: InterviewState, commandId: string): void {
+  database.prepare(`
+    UPDATE answer_commands SET lease_owner = NULL, lease_expires_at = NULL
+    WHERE session_id = ? AND command_id = ? AND status = 'pending' AND lease_owner = ?
+  `).run(state.sessionId, commandId, commandLeaseOwner);
+}
+
 async function phraseQuestion(step: InterviewStep): Promise<void> {
   if (!model || !models || step.decision.action === "FINISH") return;
-  const prompt = await generateQuestionWithAgent({
+  const prompt = await withOneProviderRetry(() => generateQuestionWithAgent({
     model,
     streamFn: models.streamSimple.bind(models),
     state: step.state,
     decision: step.decision,
-  });
+  }));
   setGeneratedPrompt(step.state, prompt);
   step.question = prompt.question;
 }
@@ -268,19 +351,15 @@ const server = createServer(async (request, response) => {
       const command: AnswerCommand = { ...body, answer: body.answer.trim() };
       const replay = claimAnswerCommand(state, command);
       if (replay) return json(response, 200, replay);
-      const inFlightKey = `${state.sessionId}:${command.commandId}`;
-      if (inFlightCommands.has(inFlightKey)) {
-        throw new HttpError(409, "STATE_CONFLICT", "Answer command is already in progress", true);
-      }
-      inFlightCommands.add(inFlightKey);
+      let completed = false;
       try {
         const extraction = model && models
-          ? await extractEvidenceWithAgent({
+          ? await withOneProviderRetry(() => extractEvidenceWithAgent({
               model,
               streamFn: models.streamSimple.bind(models),
               state,
               answer: command.answer,
-            })
+            }))
           : undefined;
         const step = submitAnswer(
           state,
@@ -291,9 +370,10 @@ const server = createServer(async (request, response) => {
         await phraseQuestion(step);
         const result = stepResponse(step, command.commandId);
         completeAnswerCommand(state, command.commandId, result);
+        completed = true;
         return json(response, 200, result);
       } finally {
-        inFlightCommands.delete(inFlightKey);
+        if (!completed) releaseAnswerCommand(state, command.commandId);
       }
     }
 

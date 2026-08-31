@@ -4,31 +4,58 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { once } from "node:events";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-test("Answer API is idempotent and rejects stale questions", async (t) => {
+test("Answer API survives process recovery, leases commands, and rejects stale questions", async (t) => {
   const root = resolve(import.meta.dirname, "../../..");
   const directory = mkdtempSync(join(tmpdir(), "better-resume-http-"));
+  const databasePath = join(directory, "session.db");
   const port = 32_000 + process.pid % 1_000;
-  const child = spawn(process.execPath, ["--import", "tsx", "apps/server/src/index.ts"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      DATABASE_PATH: join(directory, "session.db"),
-      PORT: String(port),
-      PI_PROVIDER: "",
-      PI_MODEL: "",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  t.after(async () => {
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`
+    CREATE TABLE answer_commands (
+      session_id TEXT NOT NULL,
+      command_id TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      expected_state_version INTEGER NOT NULL,
+      answer TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'completed')),
+      response TEXT,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, command_id),
+      UNIQUE (session_id, question_id)
+    )
+  `);
+  legacy.close();
+  const launch = async () => {
+    const apiProcess = spawn(process.execPath, ["--import", "tsx", "apps/server/src/index.ts"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        DATABASE_PATH: databasePath,
+        PORT: String(port),
+        PI_PROVIDER: "",
+        PI_MODEL: "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    await new Promise<void>((resolveReady, reject) => {
+      apiProcess.stdout.once("data", () => resolveReady());
+      apiProcess.once("exit", (code) => reject(new Error(`API exited before startup: ${code}`)));
+    });
+    return apiProcess;
+  };
+  let child = await launch();
+  const stop = async () => {
+    if (child.exitCode !== null) return;
+    const exited = once(child, "exit");
     child.kill();
-    if (child.exitCode === null) await once(child, "exit");
+    await exited;
+  };
+  t.after(async () => {
+    await stop();
     rmSync(directory, { recursive: true, force: true });
-  });
-  await new Promise<void>((resolveReady, reject) => {
-    child.stdout.once("data", () => resolveReady());
-    child.once("exit", (code) => reject(new Error(`API exited before startup: ${code}`)));
   });
 
   const post = async (path: string, body: unknown) => {
@@ -37,6 +64,10 @@ test("Answer API is idempotent and rejects stale questions", async (t) => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    return { response, body: await response.json() as Record<string, any> };
+  };
+  const get = async (path: string) => {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`);
     return { response, body: await response.json() as Record<string, any> };
   };
   const created = await post("/api/interviews", { candidateName: "Contract" });
@@ -52,15 +83,57 @@ test("Answer API is idempotent and rejects stale questions", async (t) => {
     expectedStateVersion: started.body.stateVersion,
     answer: "我负责召回模块的设计和实现，并完成了线上验证。",
   };
+  const competing = new DatabaseSync(databasePath);
+  competing.prepare(`
+    INSERT INTO answer_commands (
+      session_id, command_id, question_id, expected_state_version, answer,
+      status, lease_owner, lease_expires_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, 'pending', 'other-process', ?, ?)
+  `).run(
+    sessionId,
+    command.commandId,
+    command.questionId,
+    command.expectedStateVersion,
+    command.answer,
+    Date.now() + 60_000,
+    new Date().toISOString(),
+  );
+  competing.close();
+  const blocked = await post(`/api/interviews/${sessionId}/answer`, command);
+  assert.equal(blocked.response.status, 409);
+  assert.equal(blocked.body.retryable, true);
+  const competingCommand = await post(`/api/interviews/${sessionId}/answer`, {
+    ...command,
+    commandId: "command-2",
+  });
+  assert.equal(competingCommand.response.status, 409);
+  assert.equal(competingCommand.body.retryable, false);
+  const pending = await get(`/api/interviews/${sessionId}/state`);
+  assert.deepEqual(pending.body.pendingCommand, command);
+  assert.equal(pending.body.state.turns.length, 0);
+  const expired = new DatabaseSync(databasePath);
+  expired.prepare(`
+    UPDATE answer_commands SET lease_expires_at = 0 WHERE session_id = ? AND command_id = ?
+  `).run(sessionId, command.commandId);
+  expired.close();
+
   const first = await post(`/api/interviews/${sessionId}/answer`, command);
-  const replay = await post(`/api/interviews/${sessionId}/answer`, command);
   assert.equal(first.response.status, 200);
-  assert.deepEqual(replay.body, first.body);
+  assert.equal(first.body.pendingCommand, undefined);
   assert.equal(first.body.state.turns.length, 1);
+
+  await stop();
+  child = await launch();
+  const recovered = await get(`/api/interviews/${sessionId}/state`);
+  assert.equal(recovered.response.status, 200);
+  assert.equal(recovered.body.stateVersion, first.body.stateVersion);
+  assert.equal(recovered.body.state.turns.length, 1);
+  const replay = await post(`/api/interviews/${sessionId}/answer`, command);
+  assert.deepEqual(replay.body, first.body);
 
   const stale = await post(`/api/interviews/${sessionId}/answer`, {
     ...command,
-    commandId: "command-2",
+    commandId: "command-3",
   });
   assert.equal(stale.response.status, 409);
   assert.equal(stale.body.code, "STATE_CONFLICT");

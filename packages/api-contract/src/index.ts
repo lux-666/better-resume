@@ -170,6 +170,7 @@ export const InterviewStateResponseSchema = Type.Object({
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
   questionId: Type.Optional(Type.String({ minLength: 1 })),
+  pendingCommand: Type.Optional(AnswerCommandSchema),
 }, { additionalProperties: false });
 
 export const InterviewStepResponseSchema = Type.Object({
@@ -190,6 +191,7 @@ export interface InterviewStateResponse {
   state: InterviewState;
   stateVersion: number;
   questionId?: string;
+  pendingCommand?: AnswerCommand;
 }
 
 export interface InterviewStepResponse extends InterviewStateResponse {

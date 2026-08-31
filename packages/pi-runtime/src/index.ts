@@ -52,6 +52,15 @@ export class ModelProviderError extends Error {
   override name = "ModelProviderError";
 }
 
+export async function withOneProviderRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof ModelProviderError)) throw error;
+    return operation();
+  }
+}
+
 export function validateEvidenceExtraction(
   value: unknown,
   context: { answer: string; claimIds: readonly string[]; competencyIds: readonly string[] },

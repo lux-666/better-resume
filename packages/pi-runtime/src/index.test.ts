@@ -16,6 +16,8 @@ import {
   generateQuestionWithAgent,
   validateEvidenceExtraction,
   validateQuestionGeneration,
+  ModelProviderError,
+  withOneProviderRetry,
 } from "./index.ts";
 
 const proposal = (
@@ -175,4 +177,21 @@ test("question generation stops after one invalid-output retry", async () => {
   }));
   assert.equal(faux.state.callCount, 2);
   assert.equal(faux.getPendingResponseCount(), 1);
+});
+
+test("provider operations retry once and do not retry validation failures", async () => {
+  let attempts = 0;
+  assert.equal(await withOneProviderRetry(async () => {
+    attempts += 1;
+    if (attempts === 1) throw new ModelProviderError("temporary outage");
+    return "recovered";
+  }), "recovered");
+  assert.equal(attempts, 2);
+
+  attempts = 0;
+  await assert.rejects(withOneProviderRetry(async () => {
+    attempts += 1;
+    throw new Error("invalid output");
+  }));
+  assert.equal(attempts, 1);
 });

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Check } from "typebox/value";
 import { createFixtureCandidate, createInterviewState, startInterview } from "../../interview-core/src/index.ts";
-import { AnswerCommandSchema, ApiErrorSchema, InterviewStepResponseSchema } from "./index.ts";
+import {
+  AnswerCommandSchema,
+  ApiErrorSchema,
+  InterviewStateResponseSchema,
+  InterviewStepResponseSchema,
+} from "./index.ts";
 
 test("HTTP command and error envelopes are executable contracts", () => {
   assert.equal(Check(AnswerCommandSchema, {
@@ -24,6 +29,17 @@ test("HTTP command and error envelopes are executable contracts", () => {
     decision: step.decision, question: step.question, evidence: step.evidence,
   };
   assert.equal(Check(InterviewStepResponseSchema, response), true);
+  assert.equal(Check(InterviewStateResponseSchema, {
+    state,
+    stateVersion: 1,
+    questionId: "session:1",
+    pendingCommand: {
+      commandId: "command-1",
+      questionId: "session:1",
+      expectedStateVersion: 1,
+      answer: "待恢复的回答",
+    },
+  }), true);
   assert.equal(Check(InterviewStepResponseSchema, {
     ...response,
     state: { ...state, traces: [{ ...state.traces[0], action: "INVENTED_ACTION" }] },

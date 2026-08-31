@@ -15,24 +15,28 @@ type Role = {
 };
 
 class ApiRequestError extends Error {
-  constructor(message: string, readonly retryable: boolean) {
+  constructor(message: string, readonly code: ApiError["code"], readonly retryable: boolean) {
     super(message);
   }
 }
 
-async function post<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+const sessionStorageKey = "better-resume-session-id";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
   const value = (await response.json()) as T | ApiError;
   if (!response.ok) {
     const error = value as ApiError;
-    throw new ApiRequestError(error.message ?? "请求失败", error.retryable ?? false);
+    throw new ApiRequestError(error.message ?? "请求失败", error.code, error.retryable ?? false);
   }
   return value as T;
 }
+
+const post = <T,>(path: string, body: Record<string, unknown> = {}) => request<T>(path, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
 
 function App() {
   const [role, setRole] = useState<Role>();
@@ -48,6 +52,12 @@ function App() {
   const openGap = activeTopic?.unresolvedGaps.find((gap) => gap.status === "open");
   const latestTrace = interview?.traces.at(-1);
 
+  function restore(restored: InterviewStateResponse): void {
+    setSession(restored);
+    setPendingCommandId(restored.pendingCommand?.commandId ?? "");
+    setAnswer(restored.pendingCommand?.answer ?? "");
+  }
+
   useEffect(() => {
     fetch("/api/roles")
       .then((response) => {
@@ -56,12 +66,26 @@ function App() {
       })
       .then(([firstRole]) => setRole(firstRole))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "加载失败"));
+    const sessionId = localStorage.getItem(sessionStorageKey);
+    if (sessionId) {
+      request<InterviewStateResponse>(`/api/interviews/${sessionId}/state`)
+        .then(restore)
+        .catch((cause: unknown) => {
+          if (cause instanceof ApiRequestError && cause.code === "NOT_FOUND") {
+            localStorage.removeItem(sessionStorageKey);
+          } else {
+            setError(cause instanceof Error ? cause.message : "恢复失败");
+          }
+        });
+    }
   }, []);
 
   async function createInterview() {
     try {
       setError("");
-      setSession(await post<InterviewStateResponse>("/api/interviews", { candidateName }));
+      const created = await post<InterviewStateResponse>("/api/interviews", { candidateName });
+      setSession(created);
+      localStorage.setItem(sessionStorageKey, created.state.sessionId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "创建失败");
     }
@@ -95,7 +119,15 @@ function App() {
       setAnswer("");
       setPendingCommandId("");
     } catch (cause) {
-      if (cause instanceof ApiRequestError && !cause.retryable) setPendingCommandId("");
+      if (cause instanceof ApiRequestError && cause.code === "STATE_CONFLICT") {
+        try {
+          restore(await request<InterviewStateResponse>(`/api/interviews/${interview.sessionId}/state`));
+        } catch {
+          if (!cause.retryable) setPendingCommandId("");
+        }
+      } else if (cause instanceof ApiRequestError && !cause.retryable) {
+        setPendingCommandId("");
+      }
       setError(cause instanceof Error ? cause.message : "提交失败");
     } finally {
       setSubmitting(false);

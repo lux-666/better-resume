@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-Web 可以创建、开始和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 已定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
+Web 可以创建、开始、刷新恢复和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 逐字段定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
 
-浏览器刷新仍不会恢复 Session；Provider 失败需要客户端重试同一 Command；多进程并发和账户所有权尚未建设。单进程内的重放、旧问题、旧版本和同 Question 竞争已受保护。
+浏览器通过本地 `sessionId` 从 State API 恢复 Session 和 pending Answer；Provider 基础设施失败自动重试一次，随后可由客户端继续重试同一 Command；SQLite 租约保护多进程 Answer。账户所有权尚未建设。
 
 ## HTTP API
 
@@ -34,17 +34,17 @@ GET  /api/interviews/:id/state
 
 ```text
 { questionId, commandId, expectedStateVersion, answer }
-  → validate ownership and state
+  → validate command and state
   → reject consumed question or duplicate command
-  → persist pending Command and raw answer
+  → persist pending Command, raw answer and expiring lease
   → run Agent and Domain transition
   → atomically persist State
   → return State version and next Question
 ```
 
-`commandId` 使网络重试返回同一结果；`questionId` 防止回答旧问题；State version 防止旧状态覆盖新状态。同一 Session 的写命令串行执行，两个并发 Answer 只能有一个成功。
+`commandId` 使网络重试返回同一结果；`questionId` 防止回答旧问题；State version 防止旧状态覆盖新状态。Answer Command 的 SQLite 租约跨服务进程串行化同一问题；进程退出后，过期租约可由重试接管。
 
-目标浏览器只保存 `sessionId`，刷新后通过 State API 恢复，不维护第二份权威 InterviewState；当前尚未写入浏览器存储。
+浏览器只在 `localStorage` 保存 `sessionId`，刷新后通过 State API 恢复，不维护第二份权威 InterviewState。State 响应在必要时带回 pending Command 的原始 Answer 与幂等键。
 
 ## SQLite
 
@@ -64,19 +64,21 @@ CREATE TABLE answer_commands (
   answer TEXT,
   status TEXT,
   response TEXT,
+  lease_owner TEXT,
+  lease_expires_at INTEGER,
   PRIMARY KEY (session_id, command_id),
   UNIQUE (session_id, question_id)
 );
 ```
 
-Session 行是领域状态边界；Answer Command 行是幂等和 Provider 失败恢复边界。两者在成功 Answer 时原子提交。
+Session 行是领域状态边界；Answer Command 行是幂等、Provider 失败恢复和跨进程租约边界。两者在成功 Answer 时原子提交。SQLite 使用 WAL 与 5 秒 busy timeout；旧数据库启动时显式补充租约列。租约默认 120 秒，可用 `COMMAND_LEASE_MS` 调整。
 
 持久化规则：
 
 - 创建、Start 和成功 Answer 后保存完整 State；
 - Raw Answer 在 Provider 调用前以 pending Command 保存；
 - Evidence 与 Claim、Competency、Gap、Trace 一起提交；
-- Provider 失败保留可重试的 Raw Turn，不报告成功；
+- Provider 基础设施失败自动重试一次；再次失败时释放租约、保留可重试的 Raw Answer 且不报告成功；
 - Schema Migration 显式执行并保留 Raw Turns。
 
 ## 错误语义
