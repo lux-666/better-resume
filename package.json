@@ -7,9 +7,10 @@
     "dev": "node --watch --import tsx apps/server/src/index.ts",
     "dev:web": "vite apps/web",
     "start": "node --import tsx apps/server/src/index.ts",
+    "eval:model": "node --import tsx apps/server/src/evaluate-profiles.ts",
     "build": "npm run typecheck && npm run build -w @better-resume/web",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test apps/server/src/index.test.ts packages/api-contract/src/index.test.ts packages/interview-core/src/index.test.ts packages/pi-runtime/src/index.test.ts docs/architecture/structure.test.mjs"
+    "test": "node --import tsx --test apps/server/src/index.test.ts packages/api-contract/src/index.test.ts packages/interview-core/src/index.test.ts packages/interview-core/src/fixed-profiles.test.ts packages/pi-runtime/src/index.test.ts docs/architecture/structure.test.mjs"
   },
   "engines": { "node": ">=22.19" },
   "devDependencies": {

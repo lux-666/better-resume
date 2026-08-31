@@ -39,8 +39,10 @@ test("fixture interview turns an answer into evidence and the next policy questi
     state,
     "准确率按人工标注测试集上的正确回答比例计算，基线为未加 reranker 的版本。",
   );
-  assert.equal(metric.decision.action, "FINISH");
-  assert.equal(state.status, "completed");
+  assert.equal(metric.decision.action, "SWITCH_TOPIC");
+  assert.equal(metric.decision.skill, "failure-forensics");
+  assert.equal(metric.decision.targetGap, "failure_analysis");
+  assert.equal(state.status, "active");
   assert.equal(state.evidence.length, 2);
 });
 

@@ -81,7 +81,7 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     commandId: "command-1",
     questionId: started.body.questionId,
     expectedStateVersion: started.body.stateVersion,
-    answer: "我负责召回模块的设计和实现，并完成了线上验证。",
+    answer: "我负责召回模块的设计和实现，并完成了切分策略、接口联调和线上验证。",
   };
   const competing = new DatabaseSync(databasePath);
   competing.prepare(`
@@ -137,4 +137,29 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   });
   assert.equal(stale.response.status, 409);
   assert.equal(stale.body.code, "STATE_CONFLICT");
+
+  let current = recovered.body;
+  const remainingAnswers = [
+    "准确率按固定测试集上的成功回答比例计算，基线是未接入 reranker 的版本。",
+    "我通过日志定位了一次线上故障的根因，修复后补了回归测试和告警。",
+    "我负责客服 Agent 的状态机设计、工具调用实现和上线验证。",
+    "延迟按固定流量窗口统计，并与同一批请求的历史基线对照。",
+    "我通过调用日志复现工具故障，定位超时根因并实现重试和监控。",
+  ];
+  for (const [index, answer] of remainingAnswers.entries()) {
+    const next = await post(`/api/interviews/${sessionId}/answer`, {
+      commandId: `long-command-${index}`,
+      questionId: current.questionId,
+      expectedStateVersion: current.stateVersion,
+      answer,
+    });
+    assert.equal(next.response.status, 200);
+    current = next.body;
+  }
+  assert.equal(current.state.status, "completed");
+  assert.equal(current.state.turns.length, 6);
+  assert.equal(new Set(current.state.turns.map((turn: { question: string }) => turn.question)).size, 6);
+  assert.ok(current.state.traces.some((trace: { action: string }) => trace.action === "SWITCH_PROJECT"));
+  assert.ok(current.state.candidate.projects.flatMap((project: { claims: Array<{ status: string }> }) => project.claims)
+    .every((claim: { status: string }) => claim.status === "supported"));
 });

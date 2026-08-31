@@ -4,13 +4,13 @@
 
 ## 当前可运行内容
 
-- React / Vite 两轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
+- React / Vite 多 Project 六轮 Demo 面试与实时 Topic、Gap、Evidence、DecisionTrace 面板
 - 原生 Node HTTP API：创建、开始、回答与状态读取
 - 原生 `node:sqlite` Session 持久化、进程重启恢复与跨进程 Answer 租约
 - 可执行 HTTP Schema、幂等 Answer Command、旧问题拒绝与单次 Provider 重试
 - Anchor Project 与 Hierarchical Policy
 - 可选的 Pi Evidence 提取、语义分类与自然问题生成主链
-- `ownership-grill` Interview Skill 指令
+- 可加载的 Ownership、Metric、Failure 与 Consistency Interview Skills
 
 ## 文档导航
 
@@ -37,6 +37,12 @@ npm run dev:web
 
 ```bash
 PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run dev
+```
+
+同一配置可运行单个真实模型固定 Profile；参数可取 `strong`、`weak`、`contradictory` 或 `all`：
+
+```bash
+PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- strong
 ```
 
 ```bash

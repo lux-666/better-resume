@@ -4,7 +4,7 @@
 
 ## 当前事实
 
-Web 可以创建、开始、刷新恢复和完成固定两轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 逐字段定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
+Web 可以创建、开始、刷新恢复和完成多 Project 六轮 Demo，并展示 Project、Topic、Gap、Decision、Skill、Evidence 和 Competency。TypeBox 逐字段定义 Create、Answer、State/Step 与 Error 的可执行 Schema；SQLite 同时保存 InterviewState 和 pending/completed Answer Command。
 
 浏览器通过本地 `sessionId` 从 State API 恢复 Session 和 pending Answer；Provider 基础设施失败自动重试一次，随后可由客户端继续重试同一 Command；SQLite 租约保护多进程 Answer。账户所有权尚未建设。
 

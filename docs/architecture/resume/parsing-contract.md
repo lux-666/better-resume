@@ -9,8 +9,8 @@
 ## 当前事实
 
 - 创建 Session 只接收可选 `candidateName`；
-- CandidateProfile 来自固定的企业 RAG Fixture；
-- Fixture 包含 Ownership 与 15% Metric 两个 Resume Claim；
+- CandidateProfile 来自固定的企业 RAG 与客服 Agent 双 Project Fixture；
+- Fixture 包含四个 Ownership/Metric Resume Claim 和六个 Topic；
 - 没有简历文本、文件上传、解析或人工确认入口；
 - 没有教育、经历、项目和技能的通用映射；
 - 没有根据 Role Pack 生成 Topic 与 Gap。

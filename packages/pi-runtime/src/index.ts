@@ -1,4 +1,6 @@
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import {
@@ -59,6 +61,12 @@ export async function withOneProviderRetry<T>(operation: () => Promise<T>): Prom
     if (!(error instanceof ModelProviderError)) throw error;
     return operation();
   }
+}
+
+export function loadInterviewSkill(skillId: string, directory = resolve("skills")): string | undefined {
+  if (!/^[a-z0-9-]+$/.test(skillId)) throw new Error("Invalid interview skill ID");
+  const path = resolve(directory, skillId, "SKILL.md");
+  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
 export function validateEvidenceExtraction(
@@ -222,6 +230,7 @@ export async function generateQuestionWithAgent(options: {
   streamFn: AgentOptions["streamFn"];
   state: InterviewState;
   decision: InterviewDecision;
+  skillInstruction?: string;
 }): Promise<QuestionGeneration> {
   const { project, topic, gap } = getActiveInterviewContext(options.state);
   let accepted: QuestionGeneration | undefined;
@@ -250,8 +259,9 @@ export async function generateQuestionWithAgent(options: {
     "Sound natural, calm, and professional without pretending to be human.",
     "The acknowledgement is optional, neutral, and cannot praise, judge, or confirm an unverified claim.",
     "Ask exactly one concise question, follow the decision and gap, and never reveal internal evaluation context.",
+    options.skillInstruction ? `Apply this interview skill:\n${options.skillInstruction}` : "",
     "Call submit_question exactly once. Do not answer with prose.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   agent.state.tools = [submitQuestion];
   agent.shouldStopAfterTurn = ({ toolResults }) => {
     validationFailures += toolResults.filter((result) => result.toolName === "submit_question" && result.isError).length;

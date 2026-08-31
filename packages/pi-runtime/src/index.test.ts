@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   createModels,
@@ -14,11 +15,22 @@ import {
 import {
   extractEvidenceWithAgent,
   generateQuestionWithAgent,
+  loadInterviewSkill,
   validateEvidenceExtraction,
   validateQuestionGeneration,
   ModelProviderError,
   withOneProviderRetry,
 } from "./index.ts";
+
+test("loads only repository interview skills", () => {
+  const directory = resolve(import.meta.dirname, "../../..", "skills");
+  assert.match(loadInterviewSkill("ownership-grill", directory) ?? "", /Ownership Grill/);
+  assert.match(loadInterviewSkill("metric-audit", directory) ?? "", /Metric Audit/);
+  assert.match(loadInterviewSkill("failure-forensics", directory) ?? "", /Failure Forensics/);
+  assert.match(loadInterviewSkill("consistency-check", directory) ?? "", /Consistency Check/);
+  assert.equal(loadInterviewSkill("not-installed", directory), undefined);
+  assert.throws(() => loadInterviewSkill("../escape", directory));
+});
 
 const proposal = (
   sourceQuote: string,

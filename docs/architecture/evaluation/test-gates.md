@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-`npm test` 当前执行 14 个产品行为测试和 1 个架构结构测试：HTTP 进程恢复/租约/幂等/旧问题拒绝、可执行 API Schema、Core 的固定闭环与矛盾路由、Pi 的语义、Provider/格式单次重试与自然问题契约，以及文档层级检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
+`npm test` 当前执行 18 个产品行为测试和 1 个架构结构测试：HTTP 六轮进程恢复/租约/幂等/旧问题拒绝、可执行 API Schema、Core 的强/弱/矛盾固定 Profile、Pi 的语义、Skill 加载、Provider/格式单次重试与自然问题契约，以及文档层级检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
 
-当前没有真实模型语义回归或 6–10 轮固定 Profile，因此不能对候选人能力结论做有效性评价。
+确定性 Profile 已分别在 6、6、8 轮完成并产生不同 Claim 结论；当前环境未配置真实 Provider，因此仍不能对模型语义质量或候选人能力结论做有效性评价。
 
 ## 验证顺序
 
@@ -26,6 +26,14 @@ Domain determinism
 ```bash
 npm test
 npm run build
+```
+
+配置 Provider 后逐个执行真实模型 Profile：
+
+```bash
+PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- strong
+PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- weak
+PI_PROVIDER=openai PI_MODEL=gpt-5-mini OPENAI_API_KEY=... npm run eval:model -- contradictory
 ```
 
 Domain 测试必须覆盖 Anchor、Start、Evidence/Claim 链接、Quote、Competency 更新、Gap 路由、Topic/Project 切换、硬上限和 terminal rejection。
@@ -71,12 +79,15 @@ npm run dev:web
 准确率按人工标注测试集上的正确回答比例计算，基线为未加 reranker 的版本。
 ```
 
+随后依次回答 RAG 故障、客服 Agent Ownership、延迟指标和工具调用故障；每轮都给出本人动作、对照口径或根因验证。
+
 通过标准：
 
 - 第一轮产生逐字 Ownership Evidence 并关联 Claim；
 - Ownership Gap 关闭并切换到 Evaluation；
 - 第二轮产生 Metric Evidence 并关联 Claim；
-- Session 完成且没有重复 Turn/Evidence；
+- 第三轮切换 Failure，第四轮通过 `SWITCH_PROJECT` 进入客服 Agent；
+- 第六轮 Session 完成且没有重复 Turn/Evidence；
 - State API 与页面一致，API 重启后引用不丢失。
 
 该走查只证明 Web、API、SQLite 和确定性 Domain 闭环，不证明模型或评估质量。
@@ -87,14 +98,14 @@ npm run dev:web
 
 - [x] Pi Extraction 通过 Schema、上下文和 Quote 校验并进入 Answer 主链；
 - [x] 模型语义语料覆盖具体、模糊、否认、矛盾和无关回答；
-- [ ] `ownership-grill`、`metric-audit`、`failure-forensics` 可执行；
+- [x] `ownership-grill`、`metric-audit`、`failure-forensics` 可执行；
 - [ ] Question Generation 每轮只产生一个不重复主问题；
-- [ ] Session 支持可恢复的 6–10 轮和全部 Policy 转换；
-- [ ] 强、弱、矛盾三个固定 Profile 通过；
+- [x] Session 支持可恢复的 6–10 轮核心 Policy 转换；
+- [x] 强、弱、矛盾三个确定性固定 Profile 通过；
 - [ ] Provider 超时与重试不丢失或重复数据；
 - [x] UI 展示 Topic、Gap、Evidence 和 DecisionTrace；
 - [x] Evidence 与 Question 全部可追溯到 State；
-- [ ] Domain、Pi、HTTP 自动化与固定答案走查全部通过。
+- [x] Domain、Pi、HTTP 自动化与固定答案走查全部通过。
 
 ## 真人测试协议
 

@@ -26,6 +26,7 @@ import {
   EvidenceValidationError,
   extractEvidenceWithAgent,
   generateQuestionWithAgent,
+  loadInterviewSkill,
   ModelProviderError,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
@@ -295,6 +296,7 @@ async function phraseQuestion(step: InterviewStep): Promise<void> {
     streamFn: models.streamSimple.bind(models),
     state: step.state,
     decision: step.decision,
+    skillInstruction: step.decision.skill ? loadInterviewSkill(step.decision.skill) : undefined,
   }));
   setGeneratedPrompt(step.state, prompt);
   step.question = prompt.question;

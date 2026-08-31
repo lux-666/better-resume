@@ -4,9 +4,9 @@
 
 ## 当前事实
 
-Anchor Project 已按岗位相关度、能力覆盖、Claim 和技术密度排序；Topic 按预期信息增益选择；Gap 可映射到 Skill ID。固定闭环已运行 Ownership → Evaluation → Finish，并记录 action、targetGap、selectedSkill 与 reason。
+Anchor Project 已按岗位相关度、能力覆盖、Claim 和技术密度排序；Topic 按预期信息增益选择；Gap 可映射到 Skill ID。固定闭环已运行 Ownership → Evaluation → Failure → Switch Project，并记录 action、targetGap、selectedSkill 与 reason。
 
-仓库目前只有 `ownership-grill` Skill 文件。Core 已验证否认 Claim 后创建 contradiction Gap，并优先执行 `CLARIFY_CONTRADICTION`；Scenario、General Probe、多 Project 切换、重复惩罚和疲劳控制仍没有端到端回归。
+`ownership-grill`、`metric-audit`、`failure-forensics` 和 `consistency-check` 均可由 Runtime 加载。Core 已验证多 Project 切换和否认 Claim 后的 `CLARIFY_CONTRADICTION`；Scenario、General Probe、重复惩罚和疲劳控制仍未实现。
 
 ## Session 状态机
 
@@ -83,9 +83,9 @@ Skill 只定义适用 Gap、目标 Evidence、可用 Probe、停止条件和禁�
 
 ## 验收
 
-- `ownership-grill`、`metric-audit`、`failure-forensics` 可由 Runtime 加载；
+- [x] `ownership-grill`、`metric-audit`、`failure-forensics` 可由 Runtime 加载；
 - 每个核心 Skill 覆盖明确、模糊、否认和矛盾回答；
 - Policy 覆盖继续 Topic、切 Topic、切 Project、矛盾、Scenario 和 Finish；
-- 6–10 轮中没有重复主问题；
+- [x] 确定性 6–10 轮中没有重复主问题；
 - 每次切换都能由 Trace 解释；
 - Gap 解决后不继续追问同一证据。

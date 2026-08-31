@@ -227,6 +227,123 @@ export function createFixtureCandidate(name = "匿名候选人"): CandidateProfi
         saturation: 0,
         expectedInformationGain: 0.9,
       },
+      {
+        id: "topic_rag_failure",
+        projectId,
+        name: "故障复盘",
+        status: "candidate",
+        summary: "验证线上故障的定位、根因与预防措施",
+        evidenceIds: [],
+        unresolvedGaps: [{
+          competencyId: "problem_solving",
+          type: "failure_analysis",
+          description: "缺少一次真实故障的诊断过程、根因和修复验证。",
+          importance: 0.8,
+          status: "open",
+        }],
+        pendingLeads: [],
+        relatedCompetencies: ["problem_solving"],
+        turnIds: [],
+        saturation: 0,
+        expectedInformationGain: 0.8,
+      },
+    ],
+  };
+  const agentProjectId = "project_service_agent";
+  const agentOwnershipClaim: Claim = {
+    id: "claim_agent_ownership",
+    source: "resume",
+    text: "主导客服 Agent 工作流的设计与落地",
+    projectId: agentProjectId,
+    status: "unverified",
+    relatedCompetencies: ["agent_engineering", "software_engineering"],
+    supportingEvidenceIds: [],
+    weakEvidenceIds: [],
+    contradictingEvidenceIds: [],
+  };
+  const agentMetricClaim: Claim = {
+    id: "claim_agent_metric",
+    source: "resume",
+    text: "平均响应延迟降低 30%",
+    projectId: agentProjectId,
+    status: "unverified",
+    relatedCompetencies: ["agent_engineering", "evaluation"],
+    supportingEvidenceIds: [],
+    weakEvidenceIds: [],
+    contradictingEvidenceIds: [],
+  };
+  const agentProject: Project = {
+    id: agentProjectId,
+    name: "客服 Agent 工作流",
+    description: "包含工具调用、状态管理和人工升级的客服 Agent",
+    candidateRole: "AI / LLM 应用工程师",
+    technologies: ["TypeScript", "Tool Calling", "State Machine"],
+    outcomes: ["平均响应延迟降低 30%"],
+    claims: [agentOwnershipClaim, agentMetricClaim],
+    mappedCompetencies: ["agent_engineering", "software_engineering", "evaluation", "problem_solving"],
+    status: "unexplored",
+    roleRelevance: 0.8,
+    topics: [
+      {
+        id: "topic_agent_ownership",
+        projectId: agentProjectId,
+        name: "Agent 个人贡献",
+        status: "candidate",
+        summary: "验证工作流设计与实现的个人边界",
+        evidenceIds: [],
+        unresolvedGaps: [{
+          competencyId: "agent_engineering",
+          type: "ownership_scope",
+          description: "简历没有区分候选人与团队在 Agent 工作流中的贡献。",
+          importance: 1,
+          status: "open",
+        }],
+        pendingLeads: [],
+        relatedCompetencies: ["agent_engineering"],
+        turnIds: [],
+        saturation: 0,
+        expectedInformationGain: 1,
+      },
+      {
+        id: "topic_agent_evaluation",
+        projectId: agentProjectId,
+        name: "Agent 效果评估",
+        status: "candidate",
+        summary: "验证延迟指标、基线与归因",
+        evidenceIds: [],
+        unresolvedGaps: [{
+          competencyId: "evaluation",
+          type: "metric_definition",
+          description: "30% 的延迟下降缺少统计口径、基线与流量范围。",
+          importance: 0.9,
+          status: "open",
+        }],
+        pendingLeads: [],
+        relatedCompetencies: ["evaluation"],
+        turnIds: [],
+        saturation: 0,
+        expectedInformationGain: 0.9,
+      },
+      {
+        id: "topic_agent_failure",
+        projectId: agentProjectId,
+        name: "Agent 故障复盘",
+        status: "candidate",
+        summary: "验证工具调用失败的定位与恢复设计",
+        evidenceIds: [],
+        unresolvedGaps: [{
+          competencyId: "problem_solving",
+          type: "failure_analysis",
+          description: "缺少工具调用故障的症状、根因和防复发措施。",
+          importance: 0.8,
+          status: "open",
+        }],
+        pendingLeads: [],
+        relatedCompetencies: ["problem_solving"],
+        turnIds: [],
+        saturation: 0,
+        expectedInformationGain: 0.8,
+      },
     ],
   };
   return {
@@ -234,8 +351,8 @@ export function createFixtureCandidate(name = "匿名候选人"): CandidateProfi
     name,
     education: [],
     experiences: [],
-    projects: [project],
-    skills: ["RAG", "TypeScript"],
+    projects: [project, agentProject],
+    skills: ["RAG", "Agent", "TypeScript"],
     claims: [],
   };
 }
@@ -354,7 +471,7 @@ export function submitAnswer(
   );
   const resolvesGap = isContradictionGap(gap)
     ? effectiveDisposition === "substantive" || effectiveDisposition === "denial"
-    : (effectiveDisposition === "substantive" && relevantEvidence.some((item) => item.polarity === "support"))
+    : (effectiveDisposition === "substantive" && relevantEvidence.length > 0)
       || (effectiveDisposition === "denial" && relevantEvidence.some((item) => item.polarity === "invalidate"));
   if (relevantEvidence.length > 0 && resolvesGap) gap.status = "resolved";
   if (!isContradictionGap(gap)) {
@@ -417,7 +534,9 @@ function extractDemoEvidence(
   const specificity = Math.min(1, 0.2 + answer.length / 80);
   const supported = hasSignal && specificity >= 0.5;
   const claimIds = project.claims
-    .filter((claim) => isMetric ? /%|准确率|提升/.test(claim.text) : /负责|架构|实现/.test(claim.text))
+    .filter((claim) => isMetric
+      ? /%|准确率|延迟|提升|降低/.test(claim.text)
+      : /负责|主导|架构|设计|实现/.test(claim.text))
     .map((claim) => claim.id);
   return {
     claimIds,
@@ -476,9 +595,26 @@ function updateCompetency(state: InterviewState, competencyId: string): void {
 }
 
 function activateDecisionTarget(state: InterviewState, decision: InterviewDecision): void {
-  if (decision.action !== "SWITCH_TOPIC" || !decision.projectId || !decision.topicId) return;
+  if (decision.action === "FINISH") {
+    for (const project of state.candidate.projects) {
+      if (project.status === "active") project.status = "completed";
+      for (const topic of project.topics) if (topic.status === "active") topic.status = "completed";
+    }
+    return;
+  }
+  if ((decision.action !== "SWITCH_TOPIC" && decision.action !== "SWITCH_PROJECT")
+    || !decision.projectId || !decision.topicId) return;
   const project = state.candidate.projects.find((item) => item.id === decision.projectId);
   if (!project) return;
+  if (decision.action === "SWITCH_PROJECT") {
+    for (const item of state.candidate.projects) {
+      if (item.status === "active") {
+        item.status = "completed";
+        for (const topic of item.topics) if (topic.status === "active") topic.status = "completed";
+      }
+      if (item.id === project.id) item.status = "active";
+    }
+  }
   for (const topic of project.topics) {
     if (topic.status === "active") topic.status = "completed";
     if (topic.id === decision.topicId) topic.status = "active";
@@ -567,7 +703,17 @@ function nextProjectOrFinish(state: InterviewState, currentProjectId: string): I
   const project = selectAnchorProject(
     state.candidate.projects.filter((item) => item.id !== currentProjectId && item.status !== "completed"),
   );
-  return project
-    ? { action: "SWITCH_PROJECT", projectId: project.id, reason: "The current project has no useful open topic." }
-    : { action: "FINISH", reason: "No high-value project or topic remains." };
+  if (!project) return { action: "FINISH", reason: "No high-value project or topic remains." };
+  const topic = project.topics
+    .filter((item) => item.status === "candidate" || item.status === "paused")
+    .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
+  const gap = topic ? selectOpenGap(topic) : undefined;
+  return {
+    action: "SWITCH_PROJECT",
+    projectId: project.id,
+    topicId: topic?.id,
+    skill: gap ? skillFor(gap) : undefined,
+    targetGap: gap?.type,
+    reason: "The current project has no useful open topic.",
+  };
 }
