@@ -55,10 +55,9 @@ function App() {
   const interview = session?.state;
   const runtime = session?.runtime ?? serverRuntime;
   const progress = session?.progress;
-  const activeProject = interview?.candidate.projects.find((project) => project.status === "active");
-  const activeTopic = activeProject?.topics.find((topic) => topic.status === "active");
-  const openGap = activeTopic?.unresolvedGaps.find((gap) => gap.status === "open");
   const latestTrace = interview?.traces.at(-1);
+  const activeField = interview?.report.fields.find((field) => field.id === latestTrace?.targetFieldId);
+  const activeProject = interview?.candidate.projects.find((project) => project.id === activeField?.projectId);
 
   function restore(restored: InterviewStateResponse): void {
     setSession(restored);
@@ -237,8 +236,7 @@ function App() {
             <progress max="100" value={progress.coveragePercent} />
             <dl className="progress-grid">
               <div><dt>Project</dt><dd>{progress.projects.covered}/{progress.projects.total}</dd></div>
-              <div><dt>Topic</dt><dd>{progress.topics.covered}/{progress.topics.total}</dd></div>
-              <div><dt>Gap</dt><dd>{progress.gaps.closed}/{progress.gaps.total}</dd></div>
+              <div><dt>Report</dt><dd>{progress.reportFields.covered}/{progress.reportFields.total}</dd></div>
               <div><dt>核心能力</dt><dd>{progress.coreCompetencies.covered}/{progress.coreCompetencies.total}</dd></div>
               <div><dt>轮次</dt><dd>{progress.turns.completed}/{progress.turns.max}</dd></div>
               <div><dt>待澄清矛盾</dt><dd>{progress.contradictionsOpen}</dd></div>
@@ -254,16 +252,19 @@ function App() {
               </li>;
             })}
           </ul>
+          {interview && <ul>
+            {interview.report.fields.map((field) => <li key={field.id}>
+              <strong>{field.name}</strong>
+              <small>{field.status}</small>
+            </li>)}
+          </ul>}
           {activeProject && <details className="audit">
             <summary>审核与运行 Trace</summary>
             <dl className="context">
               <div><dt>Project</dt><dd>{activeProject.name}</dd></div>
-              <div><dt>Topic</dt><dd>{activeTopic?.name ?? "—"}</dd></div>
-              <div><dt>Gap</dt><dd>{openGap?.description ?? "已解决"}</dd></div>
-              <div><dt>Lead</dt><dd>{latestTrace?.selectedLead ?? "—"}</dd></div>
-              <div><dt>Probe</dt><dd>{latestTrace?.selectedProbe ?? "—"}</dd></div>
+              <div><dt>Report field</dt><dd>{activeField?.name ?? "—"}</dd></div>
+              <div><dt>Status</dt><dd>{activeField?.status ?? "—"}</dd></div>
               <div><dt>Decision</dt><dd>{latestTrace?.action ?? "—"}</dd></div>
-              <div><dt>Skill</dt><dd>{latestTrace?.selectedSkill ?? "—"}</dd></div>
               {latestTrace?.execution?.evidence && <div><dt>Evidence</dt><dd>
                 {latestTrace.execution.evidence.source.toUpperCase()} · {latestTrace.execution.evidence.durationMs}ms
                 {latestTrace.execution.evidence.retryCount > 0 && ` · retry ${latestTrace.execution.evidence.retryCount}`}
@@ -281,7 +282,7 @@ function App() {
           </blockquote>)}
         </article>
       </section>
-      <footer>Gap → Lead → Probe → Question → Evidence</footer>
+      <footer>Report → Investigate → Ask → Grounded edit → Finish</footer>
     </main>
   );
 }

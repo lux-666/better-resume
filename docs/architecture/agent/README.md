@@ -4,11 +4,11 @@
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 当前判断 | Evidence、Lead、Probe、Question 与 Skill 已进入同一 Answer 主链，Demo/LLM 来源可追踪 |
-| 已验证 | 五类回答语义、Lead 连续追问、Probe coverage、两次 low-yield 退出和确定性 Profile |
-| 主缺口 | 尚未用配置的真实 Provider 执行长程 Profile；失败调用尚无独立持久化事件表 |
-| 下一验收 | 强、弱、矛盾 Profile 经同一真实模型完成且全部可追踪 |
+| 当前判断 | Agent 已以 Candidate Report 完成为目标，自主选择调查内容与结束时机 |
+| 已验证 | `read_report`、`edit_report`、`ask_candidate`、`finish_interview` 工具边界和固定 Profile |
+| 主缺口 | 尚未用配置的真实 Provider 执行三类长程回归 |
+| 下一验收 | 同一真实模型完成强、弱、矛盾 Profile，问题不重复且 Evidence 全部可追溯 |
 
-本板块只建设“一个候选人 ↔ 一个 Interview Agent”的持续会话。Multi-Agent、Agent 间通信和跨候选人长期记忆不在当前边界内。
+本板块只建设一个候选人与一个 Interview Agent 的持续 Session。
 
-具体设计见[会话与模型契约](conversation-contract.md)。
+具体设计见[会话与工具契约](conversation-contract.md)。

@@ -151,10 +151,12 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
 
   let current = recovered.body;
   for (let index = 0; current.state.status === "active" && index < 14; index += 1) {
-    const targetGap = current.state.traces.at(-1).targetGap as string;
-    const answer = targetGap.includes("metric")
+    const targetFieldId = current.state.traces.at(-1).targetFieldId as string;
+    const answer = targetFieldId.endsWith(":measurement")
       ? "指标按固定测试集上的成功比例计算，并与同一批样本的历史基线对照。"
-      : "我负责这部分的具体设计、实现、上线验证和回归检查。";
+      : targetFieldId.endsWith(":failure")
+        ? "我通过日志定位根因，修复后补了回归验证和告警。"
+        : "我负责这部分的具体设计、实现、上线验证和回归检查。";
     const next = await post(`/api/interviews/${sessionId}/answer`, {
       commandId: `long-command-${index}`,
       questionId: current.questionId,
@@ -165,10 +167,10 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     current = next.body;
   }
   assert.equal(current.state.status, "completed");
-  assert.ok(current.state.turns.length >= 6 && current.state.turns.length <= 15);
+  assert.ok(current.state.turns.length >= 8 && current.state.turns.length <= 15);
   assert.equal(new Set(current.state.turns.map((turn: { question: string }) => turn.question)).size,
     current.state.turns.length);
-  assert.ok(current.state.traces.some((trace: { action: string }) => trace.action === "SWITCH_PROJECT"));
+  assert.equal(current.state.report.status, "complete");
   assert.ok(current.state.candidate.projects.flatMap((project: { claims: Array<{ status: string }> }) => project.claims)
     .every((claim: { status: string }) => claim.status === "supported"));
 });

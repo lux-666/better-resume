@@ -1,131 +1,65 @@
-# 会话与模型契约
+# 会话与工具契约
 
 [返回 Agent 板块](README.md) · [返回架构 Map](../README.md)
 
-## 目标与当前事实
+## 目标
 
-目标是一个 Interview Agent 在同一 Session 内持续交流 6–10 轮。每轮利用必要历史，但事实、评分和下一目标始终由 InterviewState 与确定性 Policy 控制。
+Interview Agent 每一步读取当前 Candidate Report 和最近对话，判断 Report 最缺什么或上一轮暴露了什么高价值线索，然后自主提问或请求结束。
 
-当前已有 `createInterviewAgent`、结构化 `submit_evidence` 与 `submit_question`、五类 Answer disposition、Lead/Probe 连续追问、Quote/ID 校验和候选人可见问题约束。根目录 `.env` 配置模型后，Start 和 Answer 都使用 Pi；未配置时保留确定性 Demo fallback。每次调用从持久化 InterviewState 重建选择性上下文，不保存第二份模型状态。
-
-## 双状态边界
+## 工具循环
 
 ```text
-InterviewState                      ConversationWindow
-authoritative                       derived, disposable
-├── raw Turns                       ├── system instruction
-├── accepted Evidence               ├── Role rubric subset
-├── Claims / Gaps / Leads           ├── active Project / Topic / Gap
-├── Probe coverage                  ├── active Lead / selected Probe
-├── CompetencyState                 ├── relevant Evidence
-└── DecisionTrace                   └── recent Turns + older summary
+start:
+  read_report → ask_candidate | finish_interview
+
+answer:
+  read_report → edit_report
+  read_report → ask_candidate | finish_interview
 ```
 
-ConversationWindow 每次调用前从持久化状态构建，可以丢弃和重建。较早对话可以压缩为版本化 Summary，但 Claim、矛盾、评分和 Gap 必须保留在结构化状态中，不能只存在于 Summary。
+工具职责：
 
-## Answer 命令
+- `read_report`：读取 Project、Claim、Report field、grounded Evidence 和矛盾；只读。
+- `edit_report`：提交本轮 Answer 的结构化 Evidence edit；模型不能直接改 State。
+- `ask_candidate`：选择一个 Report field，并提交一个候选人可见问题。
+- `finish_interview`：请求结束；Completion Validator 可返回 blockers，Agent 随后必须继续调查。
 
-`POST /api/interviews/:id/answer` 按固定顺序执行：
+LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体技术点是否值得继续纵向深入，是 Agent 基于 Report、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。
 
-```text
-validate request and session
-  → persist pending Answer Command and raw answer
-  → build selective ConversationWindow
-  → Pi analyzes Evidence, Probe coverage and follow-up Leads
-  → validate schema, IDs, ranges and sourceQuote
-  → Core updates Claim / Competency / Gap / Lead
-  → Policy selects Gap, Lead, Probe and Skill
-  → Pi generates one Question
-  → append DecisionTrace
-  → atomically persist State
-  → return InterviewStep
-```
-
-命令输入包含 `answer`、`questionId`、`commandId` 与 `expectedStateVersion`。同一 Question 只能被一个 Command 占用；已完成 Command 重放原响应，不再次追加 Turn。
-
-Raw Answer 必须在 Provider 调用前可恢复。Provider 失败不产生 Evidence；格式重试复用同一个 Turn。
-
-## Evidence Extraction
-
-提取器只接收当前 Question 与 Answer、active Project/Topic、相关 Claims、open Gaps、相关 Competency Rubric，以及维持局部语义所需的最近 Turns。
-
-输出先分类 `substantive | vague | denial | contradiction | irrelevant`，再提交 Evidence：
+## Report edit
 
 ```json
 {
   "answerDisposition": "substantive",
-  "evidence": [
-    {
-      "claimIds": ["claim_rag_ownership"],
-      "competencyId": "software_engineering",
-      "statement": "候选人说明了本人负责的实现。",
-      "polarity": "support",
-      "strength": 0.8,
-      "specificity": 0.75,
-      "evaluatorConfidence": 0.8,
-      "sourceQuote": "我负责检索架构设计，并独立实现……"
-    }
-  ],
-  "probeCoverage": [
-    { "probe": "ownership_boundary", "status": "sufficient", "sourceQuote": "我负责检索架构设计" }
-  ],
-  "followUpLeads": [
-    {
-      "text": "hybrid search",
-      "sourceQuote": "hybrid search",
-      "signal": "mechanism",
-      "probeCoverage": [
-        { "probe": "technical_mechanism", "status": "partial", "sourceQuote": "hybrid search" }
-      ]
-    }
-  ]
+  "evidence": [{
+    "reportFieldIds": ["project_enterprise_rag:mechanism"],
+    "claimIds": [],
+    "competencyId": "rag_engineering",
+    "statement": "候选人说明使用 BM25 与 dense 召回后通过 RRF 融合。",
+    "polarity": "support",
+    "strength": 0.8,
+    "specificity": 0.9,
+    "evaluatorConfidence": 0.8,
+    "sourceQuote": "BM25 和 embedding 各召回 50 条，然后通过 RRF 融合"
+  }]
 }
 ```
 
-验证规则：
+约束：
 
-- Claim 与 Competency ID 必须属于本轮上下文；
-- 三个数值必须是 `[0, 1]` 内的有限数；
-- polarity 只能是 `support | weakness | invalidate`；
-- denial/contradiction 必须包含 invalidate Evidence，irrelevant 不得生成 Evidence；
-- `sourceQuote` 非空且逐字存在于当前 Answer；
-- Lead 只标识值得追的回答线索，不能携带换 Topic、关 Gap、评分或结束指令；
-- Probe coverage 只能是 `partial | sufficient`，并且同样要求逐字 Quote；
-- 非法 item 整体拒绝，不能由服务器改写成事实；
-- Schema 无效时最多格式重试一次；
-- 零条 Evidence 是合法结果。
+- `reportFieldIds` 和 `claimIds` 必须属于当前 Project 上下文；
+- Evidence Competency 必须与目标 Report field 一致；
+- `sourceQuote` 必须逐字存在于当前 Answer；
+- vague 只能产生 weakness，irrelevant 不得产生 Evidence；
+- denial/contradiction 必须包含 Claim-linked invalidate Evidence；
+- 一个 Answer 可以同时更新多个 Report field。
 
-## Conversation Policy
+## 调查决策
 
-```text
-contradiction
-  → contradiction_clarification
-active Lead + uncovered Probe + lowYieldCount < 2
-  → continue the same Lead
-otherwise
-  → existing Gap / Topic / Project / Finish policy
-```
+`ask_candidate` 同时包含 `targetFieldId`、`reason`、可选中性 acknowledgement 和 question。Agent 可以调查 missing/weak field、澄清矛盾，也可以沿上一轮新出现的机制、决策、代价、失败或测量继续深挖，即使目标字段已得到初步支持。
 
-Gap 决定为什么问，Lead 决定追什么，Probe 决定从哪个角度问，Question Agent 只决定怎么说。Lead 连续两次没有新增 Probe coverage 后标记为 `low_value`，Policy 退出该 Lead。Gap 关闭、Topic/Project 切换、评分和结束仍由 Core 决定。
+`finish_interview` 不具有最终决定权。Core 检查重要字段、每个核心 Project 的 Evidence、未解决矛盾、Evidence grounding 和硬上限。
 
-## Question Generation
+## 上下文与持久化
 
-生成器只接收 InterviewDecision、active 上下文、target Gap、selected Lead/Probe、上一条 Answer、相关 Evidence 和最近 Questions。输出为可选的中性 `acknowledgement` 与一个 `question`。表达应自然、冷静、专业，但不假装成人类；不能夸奖、判分、确认未验证 Claim、泄露内部术语或组合多个主问题。
-
-Question 只有连同 DecisionTrace 持久化后才成为当前问题。
-
-## 版本与观测
-
-每次模型调用记录 provider、modelId、promptVersion、schemaVersion、latency、retryCount 和结果。回归数据保存输入、结构化输出与验收结果；Prompt 或 Schema 改变时显式更新版本。
-
-## 验收
-
-- 一个真实模型完成 6–10 轮固定 Profile；
-- 进程重启后继续同一 Session；
-- 每轮只有一个不重复的主问题；
-- active Lead 的问题必须沿 selected Probe 引用上一轮回答中的具体线索；
-- 同一 Lead 连续两次 low-yield 后必须退出；
-- 每条 Evidence 有逐字 Quote；
-- 每个 Question 有 Policy、Gap、Skill 和 Trace；
-- 超时重试不丢失或重复 Turn；
-- Agent 无法写状态或调用未授权工具。
+InterviewState 是唯一权威状态。模型上下文每次从 Report、Turns 和 Evidence 重建；不保存第二份模型记忆。Answer Command 在 Provider 调用前持久化，成功的 Report edit 与下一 Decision 原子提交。

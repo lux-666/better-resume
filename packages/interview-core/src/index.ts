@@ -1,6 +1,4 @@
-export type InterviewAction =
-  | "CONTINUE_TOPIC" | "SWITCH_TOPIC" | "SWITCH_PROJECT" | "SCENARIO_PROBE"
-  | "CLARIFY_CONTRADICTION" | "GENERAL_PROBE" | "FINISH";
+export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW";
 
 export interface Claim {
   id: string;
@@ -14,56 +12,6 @@ export interface Claim {
   contradictingEvidenceIds: string[];
 }
 
-export interface EvidenceGap {
-  competencyId: string;
-  type: string;
-  description: string;
-  importance: number;
-  status: "open" | "resolved" | "low_value";
-  probeCoverage?: ProbeCoverage[];
-}
-
-export type ProbeKind =
-  | "ownership_boundary" | "technical_mechanism" | "decision_alternatives"
-  | "tradeoff" | "failure_diagnosis" | "measurement" | "reflection" | "concrete_example"
-  | "contradiction_clarification";
-
-export type LeadSignal = "mechanism" | "decision" | "tradeoff" | "failure" | "measurement" | "other";
-
-export interface ProbeCoverage {
-  probe: ProbeKind;
-  status: "partial" | "sufficient";
-  sourceQuote: string;
-}
-
-export interface FollowUpLeadProposal {
-  text: string;
-  sourceQuote: string;
-  signal: LeadSignal;
-  probeCoverage: ProbeCoverage[];
-}
-
-export interface FollowUpLead extends FollowUpLeadProposal {
-  id: string;
-  status: "pending" | "active" | "resolved" | "low_value";
-  lowYieldCount: number;
-}
-
-export interface TopicThread {
-  id: string;
-  projectId: string;
-  name: string;
-  status: "candidate" | "active" | "paused" | "completed";
-  summary: string;
-  evidenceIds: string[];
-  unresolvedGaps: EvidenceGap[];
-  pendingLeads: FollowUpLead[];
-  relatedCompetencies: string[];
-  turnIds: string[];
-  saturation: number;
-  expectedInformationGain: number;
-}
-
 export interface Project {
   id: string;
   name: string;
@@ -73,8 +21,6 @@ export interface Project {
   outcomes: string[];
   claims: Claim[];
   mappedCompetencies: string[];
-  topics: TopicThread[];
-  status: "unexplored" | "active" | "completed";
   roleRelevance?: number;
 }
 
@@ -88,11 +34,41 @@ export interface CandidateProfile {
   claims: Claim[];
 }
 
+export type ReportFieldStatus = "missing" | "weak" | "supported" | "contradicted";
+
+export interface ReportField {
+  id: string;
+  projectId: string;
+  competencyId: string;
+  name: string;
+  description: string;
+  importance: number;
+  status: ReportFieldStatus;
+  summary?: string;
+  evidenceIds: string[];
+}
+
+export interface ReportContradiction {
+  id: string;
+  claimId: string;
+  projectId?: string;
+  status: "open" | "resolved";
+  evidenceIds: string[];
+  resolutionEvidenceIds: string[];
+}
+
+export interface CandidateReport {
+  objective: string;
+  status: "in_progress" | "complete";
+  fields: ReportField[];
+  contradictions: ReportContradiction[];
+}
+
 export interface InterviewTurn {
   id: string;
   index: number;
   projectId?: string;
-  topicId?: string;
+  reportFieldId?: string;
   acknowledgement?: string;
   question: string;
   answer: string;
@@ -103,7 +79,7 @@ export interface Evidence {
   id: string;
   turnId: string;
   projectId?: string;
-  topicId?: string;
+  reportFieldIds: string[];
   claimIds: string[];
   competencyId: string;
   statement: string;
@@ -114,7 +90,7 @@ export interface Evidence {
   sourceQuote: string;
 }
 
-export type EvidenceProposal = Omit<Evidence, "id" | "turnId" | "projectId" | "topicId">;
+export type EvidenceProposal = Omit<Evidence, "id" | "turnId" | "projectId">;
 export type AnswerDisposition = "substantive" | "vague" | "denial" | "contradiction" | "irrelevant";
 
 export interface CompetencyState {
@@ -143,15 +119,11 @@ export interface StepExecutionTrace {
 export interface DecisionTrace {
   turnId?: string;
   action: InterviewAction;
-  projectId?: string;
-  topicId?: string;
-  selectedSkill?: string;
-  selectedProbe?: ProbeKind;
-  selectedLead?: string;
-  targetGap?: string;
+  targetFieldId?: string;
   reason: string;
   acknowledgement?: string;
   generatedQuestion?: string;
+  completionBlockers?: string[];
   execution?: StepExecutionTrace;
 }
 
@@ -160,8 +132,7 @@ export interface InterviewProgress {
   coveragePercent: number;
   turns: { completed: number; max: number };
   projects: { covered: number; total: number };
-  topics: { covered: number; total: number };
-  gaps: { closed: number; total: number };
+  reportFields: { covered: number; total: number };
   coreCompetencies: { covered: number; total: number };
   contradictionsOpen: number;
 }
@@ -173,6 +144,7 @@ export interface InterviewState {
   currentAcknowledgement?: string;
   currentQuestion?: string;
   candidate: CandidateProfile;
+  report: CandidateReport;
   turns: InterviewTurn[];
   evidence: Evidence[];
   competencies: CompetencyState[];
@@ -181,14 +153,10 @@ export interface InterviewState {
 
 export interface InterviewDecision {
   action: InterviewAction;
-  projectId?: string;
-  topicId?: string;
-  skill?: string;
-  selectedProbe?: ProbeKind;
-  selectedLeadId?: string;
-  selectedLead?: string;
-  targetGap?: string;
+  targetFieldId?: string;
   reason: string;
+  acknowledgement?: string;
+  question?: string;
 }
 
 export interface InterviewStep {
@@ -198,18 +166,85 @@ export interface InterviewStep {
   evidence: Evidence[];
 }
 
-const HARD_MAX_TURNS = 15;
-const HARD_MAX_TOPIC_TURNS = 6;
+export interface AnswerRecord {
+  state: InterviewState;
+  turn: InterviewTurn;
+  evidence: Evidence[];
+}
 
-export interface AnswerAnalysisDetails {
-  followUpLeads?: readonly FollowUpLeadProposal[];
-  probeCoverage?: readonly ProbeCoverage[];
+export interface CompletionCheck {
+  allowed: boolean;
+  forced: boolean;
+  blockers: string[];
+}
+
+export const HARD_MAX_TURNS = 15;
+
+const FIELD_KINDS = [
+  {
+    id: "ownership",
+    name: "Ownership",
+    importance: 1,
+    competency: (project: Project) => project.mappedCompetencies.includes("software_engineering")
+      ? "software_engineering" : project.mappedCompetencies[0],
+    description: (project: Project) => `明确候选人在“${project.name}”中的个人边界、决策和交付。`,
+  },
+  {
+    id: "mechanism",
+    name: "Architecture and mechanism",
+    importance: 0.9,
+    competency: (project: Project) => project.mappedCompetencies.find((id) =>
+      !["software_engineering", "evaluation", "problem_solving"].includes(id)
+    ) ?? project.mappedCompetencies[0],
+    description: (project: Project) => `说明“${project.name}”的关键机制、设计选择和代价。`,
+  },
+  {
+    id: "measurement",
+    name: "Measurement",
+    importance: 0.9,
+    competency: (project: Project) => project.mappedCompetencies.includes("evaluation")
+      ? "evaluation" : project.mappedCompetencies[0],
+    description: (project: Project) => `给出“${project.name}”的指标定义、基线、数据和验证结果。`,
+  },
+  {
+    id: "failure",
+    name: "Failure analysis",
+    importance: 0.8,
+    competency: (project: Project) => project.mappedCompetencies.includes("problem_solving")
+      ? "problem_solving" : project.mappedCompetencies[0],
+    description: (project: Project) => `重建“${project.name}”的一次失败、诊断、根因和修复验证。`,
+  },
+] as const;
+
+export function createCandidateReport(candidate: CandidateProfile): CandidateReport {
+  return {
+    objective: "完成一份可信、完整、且每个重要判断都有候选人原话支撑的 Candidate Report。",
+    status: "in_progress",
+    fields: candidate.projects.flatMap((project) => FIELD_KINDS.map((kind): ReportField => ({
+      id: `${project.id}:${kind.id}`,
+      projectId: project.id,
+      competencyId: kind.competency(project),
+      name: kind.name,
+      description: kind.description(project),
+      importance: kind.importance,
+      status: "missing",
+      evidenceIds: [],
+    }))),
+    contradictions: [],
+  };
 }
 
 export function createInterviewState(sessionId: string, roleId: string, candidate: CandidateProfile): InterviewState {
   return {
-    sessionId, roleId, status: "draft", candidate,
-    turns: [], evidence: [], competencies: [], traces: [],
+    sessionId,
+    roleId,
+    status: "draft",
+    candidate,
+    report: createCandidateReport(candidate),
+    turns: [],
+    evidence: [],
+    competencies: [],
+    traces: [],
   };
 }
 
@@ -217,233 +252,89 @@ export function getInterviewProgress(
   state: InterviewState,
   coreCompetencyIds: readonly string[],
 ): InterviewProgress {
-  const projects = state.candidate.projects;
-  const topics = projects.flatMap((project) => project.topics);
-  const gaps = topics.flatMap((topic) => topic.unresolvedGaps);
+  const coveredFields = state.report.fields.filter((field) => field.status !== "missing").length;
   const coveredCoreCompetencies = coreCompetencyIds.filter((competencyId) => {
     const competency = state.competencies.find((item) => item.competencyId === competencyId);
     return competency !== undefined && competency.evidenceIds.length > 0 && competency.confidence >= 0.3;
   }).length;
-  const closedGaps = gaps.filter((gap) => gap.status !== "open").length;
-  const coverageTotal = gaps.length + coreCompetencyIds.length;
+  const coverageTotal = state.report.fields.length + coreCompetencyIds.length;
   return {
     stage: state.status === "draft" ? "not_started" : state.status === "completed" ? "completed" : "interviewing",
-    coveragePercent: coverageTotal === 0 ? 0 : Math.round((closedGaps + coveredCoreCompetencies) / coverageTotal * 100),
+    coveragePercent: coverageTotal === 0 ? 0
+      : Math.round((coveredFields + coveredCoreCompetencies) / coverageTotal * 100),
     turns: { completed: state.turns.length, max: HARD_MAX_TURNS },
     projects: {
-      covered: projects.filter((project) => project.topics.some((topic) => topic.turnIds.length > 0)).length,
-      total: projects.length,
+      covered: state.candidate.projects.filter((project) =>
+        state.evidence.some((evidence) => evidence.projectId === project.id)
+      ).length,
+      total: state.candidate.projects.length,
     },
-    topics: { covered: topics.filter((topic) => topic.turnIds.length > 0).length, total: topics.length },
-    gaps: { closed: closedGaps, total: gaps.length },
+    reportFields: { covered: coveredFields, total: state.report.fields.length },
     coreCompetencies: { covered: coveredCoreCompetencies, total: coreCompetencyIds.length },
-    contradictionsOpen: gaps.filter((gap) => isContradictionGap(gap) && gap.status === "open").length,
+    contradictionsOpen: state.report.contradictions.filter((item) => item.status === "open").length,
   };
 }
 
 export function createFixtureCandidate(name = "匿名候选人"): CandidateProfile {
-  const projectId = "project_enterprise_rag";
-  const ownershipClaim: Claim = {
-    id: "claim_rag_ownership",
+  const ragId = "project_enterprise_rag";
+  const agentId = "project_service_agent";
+  const claim = (
+    id: string,
+    text: string,
+    projectId: string,
+    relatedCompetencies: string[],
+  ): Claim => ({
+    id,
     source: "resume",
-    text: "负责企业 RAG 知识库的架构与实现",
+    text,
     projectId,
     status: "unverified",
-    relatedCompetencies: ["rag_engineering", "software_engineering"],
+    relatedCompetencies,
     supportingEvidenceIds: [],
     weakEvidenceIds: [],
     contradictingEvidenceIds: [],
-  };
-  const metricClaim: Claim = {
-    id: "claim_rag_metric",
-    source: "resume",
-    text: "回答准确率提高 15%",
-    projectId,
-    status: "unverified",
-    relatedCompetencies: ["rag_engineering", "evaluation"],
-    supportingEvidenceIds: [],
-    weakEvidenceIds: [],
-    contradictingEvidenceIds: [],
-  };
-  const project: Project = {
-    id: projectId,
-    name: "企业 RAG 知识库",
-    description: "基于向量检索与 reranker 的企业知识问答系统",
-    candidateRole: "AI / LLM 应用工程师",
-    technologies: ["TypeScript", "BGE", "Milvus", "Reranker"],
-    outcomes: ["回答准确率提高 15%"],
-    claims: [ownershipClaim, metricClaim],
-    mappedCompetencies: ["rag_engineering", "software_engineering", "evaluation"],
-    status: "unexplored",
-    roleRelevance: 1,
-    topics: [
-      {
-        id: "topic_ownership",
-        projectId,
-        name: "个人贡献",
-        status: "candidate",
-        summary: "验证候选人与团队工作的边界",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "software_engineering",
-          type: "ownership_scope",
-          description: "简历没有说明候选人本人完成了哪些设计与实现。",
-          importance: 1,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["software_engineering"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 1,
-      },
-      {
-        id: "topic_evaluation",
-        projectId,
-        name: "效果评估",
-        status: "candidate",
-        summary: "验证准确率提升的定义与测量过程",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "evaluation",
-          type: "metric_definition",
-          description: "15% 的提升缺少指标定义、基线与测试集。",
-          importance: 0.9,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["evaluation"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 0.9,
-      },
-      {
-        id: "topic_rag_failure",
-        projectId,
-        name: "故障复盘",
-        status: "candidate",
-        summary: "验证线上故障的定位、根因与预防措施",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "problem_solving",
-          type: "failure_analysis",
-          description: "缺少一次真实故障的诊断过程、根因和修复验证。",
-          importance: 0.8,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["problem_solving"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 0.8,
-      },
-    ],
-  };
-  const agentProjectId = "project_service_agent";
-  const agentOwnershipClaim: Claim = {
-    id: "claim_agent_ownership",
-    source: "resume",
-    text: "主导客服 Agent 工作流的设计与落地",
-    projectId: agentProjectId,
-    status: "unverified",
-    relatedCompetencies: ["agent_engineering", "software_engineering"],
-    supportingEvidenceIds: [],
-    weakEvidenceIds: [],
-    contradictingEvidenceIds: [],
-  };
-  const agentMetricClaim: Claim = {
-    id: "claim_agent_metric",
-    source: "resume",
-    text: "平均响应延迟降低 30%",
-    projectId: agentProjectId,
-    status: "unverified",
-    relatedCompetencies: ["agent_engineering", "evaluation"],
-    supportingEvidenceIds: [],
-    weakEvidenceIds: [],
-    contradictingEvidenceIds: [],
-  };
-  const agentProject: Project = {
-    id: agentProjectId,
-    name: "客服 Agent 工作流",
-    description: "包含工具调用、状态管理和人工升级的客服 Agent",
-    candidateRole: "AI / LLM 应用工程师",
-    technologies: ["TypeScript", "Tool Calling", "State Machine"],
-    outcomes: ["平均响应延迟降低 30%"],
-    claims: [agentOwnershipClaim, agentMetricClaim],
-    mappedCompetencies: ["agent_engineering", "software_engineering", "evaluation", "problem_solving"],
-    status: "unexplored",
-    roleRelevance: 0.8,
-    topics: [
-      {
-        id: "topic_agent_ownership",
-        projectId: agentProjectId,
-        name: "Agent 个人贡献",
-        status: "candidate",
-        summary: "验证工作流设计与实现的个人边界",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "agent_engineering",
-          type: "ownership_scope",
-          description: "简历没有区分候选人与团队在 Agent 工作流中的贡献。",
-          importance: 1,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["agent_engineering"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 1,
-      },
-      {
-        id: "topic_agent_evaluation",
-        projectId: agentProjectId,
-        name: "Agent 效果评估",
-        status: "candidate",
-        summary: "验证延迟指标、基线与归因",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "evaluation",
-          type: "metric_definition",
-          description: "30% 的延迟下降缺少统计口径、基线与流量范围。",
-          importance: 0.9,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["evaluation"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 0.9,
-      },
-      {
-        id: "topic_agent_failure",
-        projectId: agentProjectId,
-        name: "Agent 故障复盘",
-        status: "candidate",
-        summary: "验证工具调用失败的定位与恢复设计",
-        evidenceIds: [],
-        unresolvedGaps: [{
-          competencyId: "problem_solving",
-          type: "failure_analysis",
-          description: "缺少工具调用故障的症状、根因和防复发措施。",
-          importance: 0.8,
-          status: "open",
-        }],
-        pendingLeads: [],
-        relatedCompetencies: ["problem_solving"],
-        turnIds: [],
-        saturation: 0,
-        expectedInformationGain: 0.8,
-      },
-    ],
-  };
+  });
+  const ragClaims = [
+    claim("claim_rag_ownership", "负责企业 RAG 知识库的架构与实现", ragId,
+      ["rag_engineering", "software_engineering"]),
+    claim("claim_rag_metric", "回答准确率提高 15%", ragId, ["rag_engineering", "evaluation"]),
+  ];
+  const agentClaims = [
+    claim("claim_agent_ownership", "主导客服 Agent 工作流的设计与落地", agentId,
+      ["agent_engineering", "software_engineering"]),
+    claim("claim_agent_metric", "平均响应延迟降低 30%", agentId, ["agent_engineering", "evaluation"]),
+  ];
   return {
     id: globalThis.crypto.randomUUID(),
     name,
     education: [],
     experiences: [],
-    projects: [project, agentProject],
     skills: ["RAG", "Agent", "TypeScript"],
     claims: [],
+    projects: [
+      {
+        id: ragId,
+        name: "企业 RAG 知识库",
+        description: "基于向量检索与 reranker 的企业知识问答系统",
+        candidateRole: "AI / LLM 应用工程师",
+        technologies: ["TypeScript", "BGE", "Milvus", "Reranker"],
+        outcomes: ["回答准确率提高 15%"],
+        claims: ragClaims,
+        mappedCompetencies: ["rag_engineering", "software_engineering", "evaluation", "problem_solving"],
+        roleRelevance: 1,
+      },
+      {
+        id: agentId,
+        name: "客服 Agent 工作流",
+        description: "包含工具调用、状态管理和人工升级的客服 Agent",
+        candidateRole: "AI / LLM 应用工程师",
+        technologies: ["TypeScript", "Tool Calling", "State Machine"],
+        outcomes: ["平均响应延迟降低 30%"],
+        claims: agentClaims,
+        mappedCompetencies: ["agent_engineering", "software_engineering", "evaluation", "problem_solving"],
+        roleRelevance: 0.8,
+      },
+    ],
   };
 }
 
@@ -458,326 +349,142 @@ function projectValue(project: Project): number {
     + Math.min(project.technologies.length / 8, 1) * 0.1;
 }
 
-function skillFor(gap: EvidenceGap): string {
-  if (gap.type.includes("ownership")) return "ownership-grill";
-  if (gap.type.includes("metric")) return "metric-audit";
-  if (gap.type.includes("failure")) return "failure-forensics";
-  if (gap.type.includes("contradiction")) return "consistency-check";
-  return "boundary-push";
-}
-
-function isContradictionGap(gap: EvidenceGap): boolean {
-  return gap.type.startsWith("contradiction:");
-}
-
-function selectOpenGap(topic: TopicThread): EvidenceGap | undefined {
-  return topic.unresolvedGaps
-    .filter((item) => item.status === "open")
-    .toSorted((left, right) => Number(isContradictionGap(right)) - Number(isContradictionGap(left))
-      || right.importance - left.importance)[0];
-}
-
-function gapProbe(gap: EvidenceGap): ProbeKind {
-  if (isContradictionGap(gap)) return "contradiction_clarification";
-  if (gap.type.includes("ownership")) return "ownership_boundary";
-  if (gap.type.includes("metric")) return "measurement";
-  if (gap.type.includes("failure")) return "failure_diagnosis";
-  return "concrete_example";
-}
-
-function leadProbeSequence(lead: FollowUpLead): ProbeKind[] {
-  const first: Record<LeadSignal, ProbeKind> = {
-    mechanism: "technical_mechanism",
-    decision: "decision_alternatives",
-    tradeoff: "tradeoff",
-    failure: "failure_diagnosis",
-    measurement: "measurement",
-    other: "technical_mechanism",
-  };
-  return [...new Set([
-    first[lead.signal],
-    "decision_alternatives" as const,
-    lead.signal === "failure" ? "failure_diagnosis" as const : "tradeoff" as const,
-    "measurement" as const,
-  ])];
-}
-
-function mergeProbeCoverage(target: ProbeCoverage[], incoming: readonly ProbeCoverage[]): boolean {
-  let changed = false;
-  for (const coverage of incoming) {
-    const existing = target.find((item) => item.probe === coverage.probe);
-    if (!existing) {
-      target.push({ ...coverage });
-      changed = true;
-    } else if (existing.status === "partial" && coverage.status === "sufficient") {
-      Object.assign(existing, coverage);
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-function uncoveredProbe(lead: FollowUpLead): ProbeKind | undefined {
-  return leadProbeSequence(lead).find((probe) =>
-    !lead.probeCoverage.some((coverage) => coverage.probe === probe && coverage.status === "sufficient")
-  );
-}
-
-function usableLead(topic: TopicThread): FollowUpLead | undefined {
-  return topic.pendingLeads.find((lead) => lead.status === "active" && lead.lowYieldCount < 2 && uncoveredProbe(lead))
-    ?? topic.pendingLeads.find((lead) => lead.status === "pending" && lead.lowYieldCount < 2 && uncoveredProbe(lead));
-}
-
-function normalizeLeadText(value: string): string {
-  return value.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
-}
-
-function switchTopicDecision(project: Project, topic: TopicThread, reason: string): InterviewDecision {
-  const gap = selectOpenGap(topic);
-  return {
-    action: "SWITCH_TOPIC",
-    projectId: project.id,
-    topicId: topic.id,
-    skill: gap ? skillFor(gap) : undefined,
-    selectedProbe: gap ? gapProbe(gap) : undefined,
-    targetGap: gap?.type,
-    reason,
-  };
-}
-
-export function startInterview(state: InterviewState): InterviewStep {
+export function activateInterview(state: InterviewState): void {
   if (state.status !== "draft") throw new Error("Interview has already started");
-  const project = selectAnchorProject(state.candidate.projects);
-  if (!project) throw new Error("Interview requires at least one project");
-  const topic = project.topics
-    .filter((item) => item.status === "candidate")
-    .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
-  if (!topic) throw new Error("Anchor project requires at least one topic");
-
+  if (state.candidate.projects.length === 0 || state.report.fields.length === 0) {
+    throw new Error("Interview requires at least one report field");
+  }
   state.status = "active";
-  project.status = "active";
-  topic.status = "active";
-  const decision = getNextInterviewAction(state);
-  const question = questionFor(state, decision);
-  state.currentQuestion = question;
-  state.traces.push(traceFor(decision, question));
-  return { state, decision, question, evidence: [] };
 }
 
 export function getActiveInterviewContext(state: InterviewState): {
   project: Project;
-  topic: TopicThread;
-  gap: EvidenceGap;
+  field: ReportField;
 } {
-  const project = state.candidate.projects.find((item) => item.status === "active");
-  const topic = project?.topics.find((item) => item.status === "active");
-  const targetGap = state.traces.at(-1)?.targetGap;
-  const gap = topic && (topic.unresolvedGaps.find((item) => item.type === targetGap) ?? selectOpenGap(topic));
-  if (!project || !topic || !gap) throw new Error("Active interview context is incomplete");
-  return { project, topic, gap };
+  const fieldId = state.traces.at(-1)?.targetFieldId;
+  const field = state.report.fields.find((item) => item.id === fieldId);
+  const project = state.candidate.projects.find((item) => item.id === field?.projectId);
+  if (!project || !field) throw new Error("Active interview context is incomplete");
+  return { project, field };
 }
 
-export function submitAnswer(
+export function recordAnswer(
   state: InterviewState,
   answer: string,
   proposedEvidence?: readonly EvidenceProposal[],
   disposition: AnswerDisposition = "substantive",
-  details?: AnswerAnalysisDetails,
-): InterviewStep {
+): AnswerRecord {
   if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
   const text = answer.trim();
   if (!text) throw new Error("Answer cannot be empty");
-  const { project, topic, gap } = getActiveInterviewContext(state);
-  const activeLead = topic.pendingLeads.find((lead) => lead.status === "active");
-
+  const { project, field } = getActiveInterviewContext(state);
   const turn: InterviewTurn = {
     id: globalThis.crypto.randomUUID(),
     index: state.turns.length,
     projectId: project.id,
-    topicId: topic.id,
+    reportFieldId: field.id,
     acknowledgement: state.currentAcknowledgement,
     question: state.currentQuestion,
     answer: text,
     timestamp: new Date().toISOString(),
   };
-  state.turns.push(turn);
-  topic.turnIds.push(turn.id);
 
-  const evidence = (proposedEvidence ?? [extractDemoEvidence(text, project, topic, gap)]).map((item): Evidence => ({
-    ...item,
-    id: globalThis.crypto.randomUUID(),
-    turnId: turn.id,
-    projectId: project.id,
-    topicId: topic.id,
-  }));
+  const proposals = proposedEvidence ?? [extractDemoEvidence(text, project, field)];
+  if (disposition === "irrelevant" && proposals.length > 0) {
+    throw new Error("Irrelevant answers cannot produce evidence");
+  }
+  const knownClaimIds = new Set([...project.claims, ...state.candidate.claims]
+    .filter((claim) => !claim.projectId || claim.projectId === project.id)
+    .map((claim) => claim.id));
+  const evidence = proposals.map((proposal): Evidence => {
+    if (!proposal.sourceQuote || !text.includes(proposal.sourceQuote)) {
+      throw new Error("Evidence sourceQuote must be verbatim from the answer");
+    }
+    const fields = proposal.reportFieldIds.map((id) => state.report.fields.find((item) => item.id === id));
+    if (fields.length === 0 || fields.some((item) =>
+      !item || item.projectId !== project.id || item.competencyId !== proposal.competencyId
+    )) {
+      throw new Error("Evidence must reference compatible report fields in the active project");
+    }
+    if (proposal.claimIds.some((id) => !knownClaimIds.has(id))) throw new Error("Evidence references an unknown claim");
+    return {
+      ...proposal,
+      id: globalThis.crypto.randomUUID(),
+      turnId: turn.id,
+      projectId: project.id,
+    };
+  });
+  state.turns.push(turn);
   state.evidence.push(...evidence);
-  topic.evidenceIds.push(...evidence.map((item) => item.id));
-  for (const item of evidence) updateClaims(state, project, item);
-  const effectiveDisposition = proposedEvidence ? disposition
-    : evidence.some((item) => item.polarity === "support") ? "substantive" : "vague";
-  const relevantEvidence = evidence.filter((item) =>
-    item.competencyId === gap.competencyId && item.specificity >= 0.5
-  );
-  const analysis = details ?? (proposedEvidence ? {} : extractDemoAnalysis(text));
-  const selectedProbe = state.traces.at(-1)?.selectedProbe;
-  const probeCoverage = analysis.probeCoverage?.length
-    ? analysis.probeCoverage
-    : selectedProbe && relevantEvidence.length > 0
-        && effectiveDisposition !== "vague" && effectiveDisposition !== "irrelevant"
-      ? [{ probe: selectedProbe, status: "sufficient" as const, sourceQuote: relevantEvidence[0].sourceQuote }]
-      : [];
-  if (activeLead) {
-    const gainedCoverage = mergeProbeCoverage(activeLead.probeCoverage, probeCoverage);
-    if (gainedCoverage) activeLead.lowYieldCount = 0;
-    else activeLead.lowYieldCount += 1;
-    if (activeLead.lowYieldCount >= 2) activeLead.status = "low_value";
-    else if (!uncoveredProbe(activeLead)) activeLead.status = "resolved";
-  } else {
-    mergeProbeCoverage(gap.probeCoverage ??= [], probeCoverage);
+  for (const item of evidence) {
+    updateClaims(state, project, item);
+    updateReport(state, item);
   }
-  for (const proposal of analysis.followUpLeads ?? []) {
-    const duplicate = topic.pendingLeads.find((lead) =>
-      normalizeLeadText(lead.text) === normalizeLeadText(proposal.text)
-    );
-    if (duplicate) {
-      mergeProbeCoverage(duplicate.probeCoverage, proposal.probeCoverage);
-      if (!uncoveredProbe(duplicate)) duplicate.status = "resolved";
-    } else {
-      const lead: FollowUpLead = {
-        ...proposal,
-        probeCoverage: proposal.probeCoverage.map((coverage) => ({ ...coverage })),
-        id: globalThis.crypto.randomUUID(),
-        status: "pending",
-        lowYieldCount: 0,
-      };
-      if (!uncoveredProbe(lead)) lead.status = "resolved";
-      topic.pendingLeads.push(lead);
-    }
-  }
-  const primaryProbeCovered = gap.probeCoverage?.some((coverage) =>
-    coverage.probe === gapProbe(gap) && coverage.status === "sufficient"
-  ) ?? false;
-  const hasRelevantEvidence = state.evidence.some((item) =>
-    topic.evidenceIds.includes(item.id) && item.competencyId === gap.competencyId && item.specificity >= 0.5
-  );
-  if (isContradictionGap(gap)) {
-    if (relevantEvidence.length > 0
-      && (effectiveDisposition === "substantive" || effectiveDisposition === "denial")) gap.status = "resolved";
-  } else if (primaryProbeCovered && hasRelevantEvidence && !usableLead(topic)) gap.status = "resolved";
-  if (!isContradictionGap(gap)) {
-    for (const item of evidence.filter((candidate) => candidate.polarity === "invalidate")) {
-      for (const claimId of item.claimIds) {
-        const claim = [...project.claims, ...state.candidate.claims].find((candidate) => candidate.id === claimId);
-        if (!claim) continue;
-        const type = `contradiction:${claim.id}`;
-        const existing = topic.unresolvedGaps.find((candidate) => candidate.type === type);
-        if (existing) existing.status = "open";
-        else topic.unresolvedGaps.push({
-          competencyId: item.competencyId,
-          type,
-          description: `候选人的回答与 Claim“${claim.text}”矛盾，需要澄清准确情况。`,
-          importance: 1,
-          status: "open",
-        });
-      }
-    }
-  }
-  if (!topic.unresolvedGaps.some((item) => item.status === "open")) topic.saturation = 1;
+  updateContradictions(state, evidence);
   for (const competencyId of new Set(evidence.map((item) => item.competencyId))) {
     updateCompetency(state, competencyId);
   }
-
-  const decision = getNextInterviewAction(state);
-  activateDecisionTarget(state, decision);
-  const question = decision.action === "FINISH" ? undefined : questionFor(state, decision);
-  state.status = decision.action === "FINISH" ? "completed" : "active";
   state.currentAcknowledgement = undefined;
-  state.currentQuestion = question;
-  state.traces.push(traceFor(decision, question, turn.id));
-  return { state, decision, question, evidence };
+  state.currentQuestion = undefined;
+  return { state, turn, evidence };
 }
 
-export function setGeneratedPrompt(
-  state: InterviewState,
-  prompt: { acknowledgement?: string; question: string },
-): void {
-  if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting a question");
-  state.currentAcknowledgement = prompt.acknowledgement;
-  state.currentQuestion = prompt.question;
-  const trace = state.traces.at(-1);
-  if (!trace || trace.action === "FINISH") throw new Error("Interview has no question trace");
-  trace.acknowledgement = prompt.acknowledgement;
-  trace.generatedQuestion = prompt.question;
+function updateReport(state: InterviewState, evidence: Evidence): void {
+  for (const id of evidence.reportFieldIds) {
+    const field = state.report.fields.find((item) => item.id === id);
+    if (!field) continue;
+    if (field.competencyId !== evidence.competencyId) {
+      throw new Error("Evidence competency does not match its report field");
+    }
+    field.evidenceIds.push(evidence.id);
+    field.summary = evidence.statement;
+    field.status = evidence.polarity === "invalidate" ? "contradicted"
+      : evidence.polarity === "support" && evidence.strength * evidence.specificity >= 0.45
+        ? "supported" : "weak";
+  }
 }
 
-export function setStepExecution(state: InterviewState, execution: StepExecutionTrace): void {
-  const trace = state.traces.at(-1);
-  if (!trace) throw new Error("Interview has no decision trace");
-  trace.execution = execution;
+function updateContradictions(state: InterviewState, evidence: readonly Evidence[]): void {
+  for (const item of evidence) {
+    for (const claimId of item.claimIds) {
+      const existing = state.report.contradictions.find((entry) => entry.claimId === claimId);
+      if (item.polarity === "invalidate") {
+        if (existing) {
+          existing.status = "open";
+          existing.evidenceIds.push(item.id);
+        } else {
+          const claim = allClaims(state).find((candidate) => candidate.id === claimId);
+          state.report.contradictions.push({
+            id: `contradiction:${claimId}`,
+            claimId,
+            projectId: claim?.projectId,
+            status: "open",
+            evidenceIds: [item.id],
+            resolutionEvidenceIds: [],
+          });
+        }
+      } else if (existing?.status === "open") {
+        existing.status = "resolved";
+        existing.resolutionEvidenceIds.push(item.id);
+      }
+    }
+  }
 }
 
-// ponytail: deterministic demo extraction proves the data flow; replace with Pi structured output before real evaluation.
-function extractDemoEvidence(
-  answer: string,
-  project: Project,
-  topic: TopicThread,
-  gap: EvidenceGap,
-): EvidenceProposal {
-  const isMetric = gap.type.includes("metric");
-  const hasSignal = isMetric
-    ? /基线|测试集|样本|准确率|召回率|precision|recall|评估|指标/i.test(answer)
-    : /我|本人|负责|独立|主导|实现|设计|编写/.test(answer);
-  const specificity = Math.min(1, 0.2 + answer.length / 80);
-  const supported = hasSignal && specificity >= 0.5;
-  const claimIds = project.claims
-    .filter((claim) => isMetric
-      ? /%|准确率|延迟|提升|降低/.test(claim.text)
-      : /负责|主导|架构|设计|实现/.test(claim.text))
-    .map((claim) => claim.id);
-  return {
-    claimIds,
-    competencyId: gap.competencyId,
-    statement: supported ? `候选人提供了${topic.name}的具体说明。` : `候选人的回答尚未明确${topic.name}。`,
-    polarity: supported ? "support" : "weakness",
-    strength: supported ? Math.min(1, 0.5 + specificity / 2) : 0.4,
-    specificity,
-    evaluatorConfidence: 0.65,
-    sourceQuote: answer,
-  };
-}
-
-// ponytail: demo-only phrase matching; configured LLM mode supplies structured leads.
-function extractDemoAnalysis(answer: string): AnswerAnalysisDetails {
-  const failure = answer.match(/([^，。；]{2,40}(?:不稳定|失败|故障|异常|问题)[^，。；]{0,30})/);
-  const mechanism = answer.match(/(?:使用|用了|用的是|采用)\s*([^，。；]{2,40})/i);
-  const match = failure ?? mechanism;
-  if (!match) return {};
-  const sourceQuote = match[1].trim();
-  const signal: LeadSignal = failure ? "failure" : "mechanism";
-  const probe: ProbeKind = failure ? "failure_diagnosis" : "technical_mechanism";
-  return {
-    followUpLeads: [{
-      text: sourceQuote,
-      sourceQuote,
-      signal,
-      probeCoverage: [{ probe, status: "partial", sourceQuote }],
-    }],
-  };
+function allClaims(state: InterviewState): Claim[] {
+  return [...state.candidate.claims, ...state.candidate.projects.flatMap((project) => project.claims)];
 }
 
 function updateClaims(state: InterviewState, project: Project, evidence: Evidence): void {
-  const claims = [...project.claims, ...state.candidate.claims].filter((claim) => evidence.claimIds.includes(claim.id));
+  const claims = [...project.claims, ...state.candidate.claims].filter((claim) =>
+    evidence.claimIds.includes(claim.id)
+  );
   for (const claim of claims) {
-    if (evidence.polarity === "support") {
-      claim.supportingEvidenceIds.push(evidence.id);
-    } else if (evidence.polarity === "weakness") {
-      (claim.weakEvidenceIds ??= []).push(evidence.id);
-    } else {
-      (claim.contradictingEvidenceIds ??= []).push(evidence.id);
-    }
+    if (evidence.polarity === "support") claim.supportingEvidenceIds.push(evidence.id);
+    else if (evidence.polarity === "weakness") claim.weakEvidenceIds.push(evidence.id);
+    else claim.contradictingEvidenceIds.push(evidence.id);
     claim.status = claim.contradictingEvidenceIds.length > 0 ? "contradicted"
-      : claim.supportingEvidenceIds.length > 0 ? "supported"
-        : "weakened";
+      : claim.supportingEvidenceIds.length > 0 ? "supported" : "weakened";
   }
 }
 
@@ -791,176 +498,170 @@ function updateCompetency(state: InterviewState, competencyId: string): void {
     (sum, item) => sum + item.evaluatorConfidence * item.specificity,
     0,
   ) / evidence.length);
-  const missingEvidence = state.candidate.projects
-    .flatMap((project) => project.topics)
-    .flatMap((topic) => topic.unresolvedGaps)
-    .filter((gap) => gap.competencyId === competencyId && gap.status === "open")
-    .map((gap) => gap.description);
   const current = state.competencies.find((item) => item.competencyId === competencyId);
   const next: CompetencyState = {
     competencyId,
     score,
     confidence,
     evidenceIds: evidence.map((item) => item.id),
-    missingEvidence,
+    missingEvidence: state.report.fields
+      .filter((field) => field.competencyId === competencyId && field.status === "missing")
+      .map((field) => field.description),
     contradictoryEvidence: evidence.filter((item) => item.polarity === "invalidate").map((item) => item.id),
   };
   if (current) Object.assign(current, next);
   else state.competencies.push(next);
 }
 
-function activateDecisionTarget(state: InterviewState, decision: InterviewDecision): void {
-  if (decision.action === "FINISH") {
-    for (const project of state.candidate.projects) {
-      if (project.status === "active") project.status = "completed";
-      for (const topic of project.topics) if (topic.status === "active") topic.status = "completed";
-    }
-    return;
-  }
-  if (decision.selectedLeadId && decision.projectId && decision.topicId) {
-    const topic = state.candidate.projects.find((item) => item.id === decision.projectId)
-      ?.topics.find((item) => item.id === decision.topicId);
-    for (const lead of topic?.pendingLeads ?? []) {
-      if (lead.status === "active") lead.status = "pending";
-      if (lead.id === decision.selectedLeadId) lead.status = "active";
+export function validateCompletion(state: InterviewState): CompletionCheck {
+  if (state.turns.length >= HARD_MAX_TURNS) return { allowed: true, forced: true, blockers: [] };
+  const blockers = state.report.fields
+    .filter((field) => field.importance >= 0.8 && field.status === "missing")
+    .map((field) => `${field.id}: ${field.description}`);
+  for (const project of state.candidate.projects) {
+    if (!state.report.fields.some((field) => field.projectId === project.id && field.evidenceIds.length > 0)) {
+      blockers.push(`${project.id}: core project has no candidate evidence`);
     }
   }
-  if ((decision.action !== "SWITCH_TOPIC" && decision.action !== "SWITCH_PROJECT")
-    || !decision.projectId || !decision.topicId) return;
-  const project = state.candidate.projects.find((item) => item.id === decision.projectId);
-  if (!project) return;
-  if (decision.action === "SWITCH_PROJECT") {
-    for (const item of state.candidate.projects) {
-      if (item.status === "active") {
-        item.status = "completed";
-        for (const topic of item.topics) if (topic.status === "active") topic.status = "completed";
-      }
-      if (item.id === project.id) item.status = "active";
-    }
+  for (const contradiction of state.report.contradictions.filter((item) => item.status === "open")) {
+    blockers.push(`${contradiction.id}: unresolved contradiction`);
   }
-  for (const topic of project.topics) {
-    if (topic.status === "active") topic.status = "completed";
-    if (topic.id === decision.topicId) topic.status = "active";
+  for (const evidence of state.evidence) {
+    const turn = state.turns.find((item) => item.id === evidence.turnId);
+    if (!turn?.answer.includes(evidence.sourceQuote)) blockers.push(`${evidence.id}: ungrounded evidence`);
   }
+  return { allowed: blockers.length === 0, forced: false, blockers };
 }
 
-function questionFor(state: InterviewState, decision: InterviewDecision): string {
-  const project = state.candidate.projects.find((item) => item.id === decision.projectId)
-    ?? state.candidate.projects.find((item) => item.status === "active");
-  const topic = project?.topics.find((item) => item.id === decision.topicId)
-    ?? project?.topics.find((item) => item.status === "active");
-  const gap = topic && (topic.unresolvedGaps.find((item) => item.type === decision.targetGap) ?? selectOpenGap(topic));
-  const lead = topic?.pendingLeads.find((item) => item.id === decision.selectedLeadId);
-  if (!project || !topic || !gap) return "请介绍一个最能体现你能力的项目，以及你本人完成的部分。";
-  const followUp = topic.turnIds.length > 0;
-  if (isContradictionGap(gap)) {
-    const claim = [...project.claims, ...state.candidate.claims]
-      .find((item) => gap.type === `contradiction:${item.id}`);
-    return `关于“${claim?.text ?? gap.description}”，现有信息并不一致。请说明准确情况。`;
+export function validateCandidateQuestion(question: string, acknowledgement?: string): void {
+  if (question !== question.trim() || acknowledgement !== acknowledgement?.trim()) {
+    throw new Error("Question output must not contain surrounding whitespace");
   }
-  if (lead) {
-    if (decision.selectedProbe === "technical_mechanism") return `你提到“${lead.text}”，它具体是怎么实现的？`;
-    if (decision.selectedProbe === "decision_alternatives") return `关于“${lead.text}”，哪个关键比较让你最终选择了这个方案？`;
-    if (decision.selectedProbe === "tradeoff") return `采用“${lead.text}”带来的主要代价是什么？`;
-    if (decision.selectedProbe === "failure_diagnosis") return `你如何确认“${lead.text}”的根因？`;
-    if (decision.selectedProbe === "measurement") return `你用什么结果判断“${lead.text}”确实有效？`;
-    if (decision.selectedProbe === "reflection") return `复盘“${lead.text}”，你现在会改变哪项设计？`;
+  const marks = question.match(/[?？]/g)?.length ?? 0;
+  if (marks !== 1 || !/[?？]$/.test(question)) {
+    throw new Error("Question output must contain exactly one final question mark");
   }
-  if (gap.type.includes("ownership")) {
-    return followUp
-      ? `请只选“${project.name}”里一项你本人完成的工作，说明你的具体决策和实现。`
-      : `在“${project.name}”中，你本人具体负责了哪些设计和实现？`;
+  const output = `${acknowledgement ?? ""}\n${question}`;
+  if (/rubric|policy|target.?gap|probe|评分|得分|证据缺口|能力模型/i.test(output)) {
+    throw new Error("Question output reveals internal evaluation context");
   }
-  if (gap.type.includes("metric")) {
-    return `你提到“${project.claims.find((claim) => gap.competencyId === "evaluation" && claim.relatedCompetencies.includes("evaluation"))?.text ?? project.outcomes[0]}”，这个指标如何定义，基线和测试集分别是什么？`;
+  if (/非常棒|很棒|很好|优秀|厉害|显然|这证明|由此可见|你确实/.test(output)) {
+    throw new Error("Question output contains evaluative praise or presupposition");
   }
-  return `关于“${topic.name}”，请给出一个你亲自处理的具体例子。`;
+  if (/[?？]/.test(acknowledgement ?? "")) throw new Error("Acknowledgement cannot contain a question");
 }
 
-function traceFor(decision: InterviewDecision, question?: string, turnId?: string): DecisionTrace {
-  return {
+export function applyInterviewDecision(
+  state: InterviewState,
+  decision: InterviewDecision,
+  turnId?: string,
+): InterviewStep {
+  if (state.status !== "active") throw new Error("Interview is not active");
+  const completion = validateCompletion(state);
+  const effective = state.turns.length >= HARD_MAX_TURNS
+    ? { action: "FINISH_INTERVIEW", reason: "Hard turn limit reached." } satisfies InterviewDecision
+    : decision;
+  if (effective.action === "FINISH_INTERVIEW") {
+    if (!completion.allowed) throw new Error(`Candidate Report is incomplete: ${completion.blockers.join("; ")}`);
+    state.status = "completed";
+    state.report.status = "complete";
+    state.currentAcknowledgement = undefined;
+    state.currentQuestion = undefined;
+  } else {
+    const field = state.report.fields.find((item) => item.id === effective.targetFieldId);
+    if (!field || !effective.question) throw new Error("ask_candidate requires a known report field and question");
+    validateCandidateQuestion(effective.question, effective.acknowledgement);
+    if (state.turns.some((turn) => normalizeQuestion(turn.question) === normalizeQuestion(effective.question!))) {
+      throw new Error("Question repeats an earlier question");
+    }
+    state.currentAcknowledgement = effective.acknowledgement;
+    state.currentQuestion = effective.question;
+  }
+  state.traces.push({
     turnId,
-    action: decision.action,
-    projectId: decision.projectId,
-    topicId: decision.topicId,
-    selectedSkill: decision.skill,
-    selectedProbe: decision.selectedProbe,
-    selectedLead: decision.selectedLead,
-    targetGap: decision.targetGap,
-    reason: decision.reason,
-    generatedQuestion: question,
+    action: effective.action,
+    targetFieldId: effective.targetFieldId,
+    reason: effective.reason,
+    acknowledgement: effective.acknowledgement,
+    generatedQuestion: effective.question,
+    completionBlockers: effective.action === "FINISH_INTERVIEW" ? completion.blockers : undefined,
+  });
+  return { state, decision: effective, question: effective.question, evidence: [] };
+}
+
+export function setStepExecution(state: InterviewState, execution: StepExecutionTrace): void {
+  const trace = state.traces.at(-1);
+  if (!trace) throw new Error("Interview has no decision trace");
+  trace.execution = execution;
+}
+
+export function getDemoInterviewDecision(state: InterviewState): InterviewDecision {
+  const openContradiction = state.report.contradictions.find((item) => item.status === "open");
+  const contradictionField = openContradiction && state.report.fields.find((field) =>
+    field.projectId === openContradiction.projectId && field.status === "contradicted"
+  );
+  const projects = state.candidate.projects.toSorted((left, right) => projectValue(right) - projectValue(left));
+  const field = contradictionField ?? projects.flatMap((project) => state.report.fields
+    .filter((item) => item.projectId === project.id && item.status === "missing")
+    .toSorted((left, right) => right.importance - left.importance))[0];
+  if (!field) return { action: "FINISH_INTERVIEW", reason: "The Candidate Report has no completion blockers." };
+  return {
+    action: "ASK_CANDIDATE",
+    targetFieldId: field.id,
+    reason: openContradiction ? "Clarify an unresolved contradiction." : field.description,
+    question: demoQuestion(state, field, Boolean(openContradiction)),
   };
 }
 
-export function getNextInterviewAction(state: InterviewState): InterviewDecision {
-  if (state.status === "completed" || state.turns.length >= HARD_MAX_TURNS) {
-    return { action: "FINISH", reason: "Interview reached its terminal state or hard turn limit." };
-  }
-  const activeProject = state.candidate.projects.find((project) => project.status === "active");
-  if (!activeProject) {
-    const anchor = selectAnchorProject(state.candidate.projects);
-    return anchor
-      ? { action: "SWITCH_PROJECT", projectId: anchor.id, reason: "Selected the highest-value anchor project." }
-      : { action: "GENERAL_PROBE", reason: "No project evidence is available yet." };
-  }
-  const activeTopic = activeProject.topics.find((topic) => topic.status === "active");
-  if (!activeTopic) {
-    const nextTopic = activeProject.topics
-      .filter((topic) => topic.status === "candidate" || topic.status === "paused")
-      .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
-    return nextTopic
-      ? switchTopicDecision(activeProject, nextTopic, "Selected the highest-information topic.")
-      : nextProjectOrFinish(state, activeProject.id);
-  }
-  const gap = selectOpenGap(activeTopic);
-  if (gap && isContradictionGap(gap)) {
-    return {
-      action: "CLARIFY_CONTRADICTION", projectId: activeProject.id, topicId: activeTopic.id,
-      skill: "consistency-check", selectedProbe: "contradiction_clarification",
-      targetGap: gap.type, reason: gap.description,
-    };
-  }
-  const lead = usableLead(activeTopic);
-  const contextGap = gap ?? activeTopic.unresolvedGaps.find((item) => item.type === state.traces.at(-1)?.targetGap);
-  const selectedProbe = lead && uncoveredProbe(lead);
-  if (lead && selectedProbe && contextGap
-    && activeTopic.turnIds.length < HARD_MAX_TOPIC_TURNS && activeTopic.saturation < 0.85) {
-    return {
-      action: "CONTINUE_TOPIC", projectId: activeProject.id, topicId: activeTopic.id,
-      skill: skillFor(contextGap), selectedProbe, selectedLeadId: lead.id, selectedLead: lead.text,
-      targetGap: contextGap.type, reason: `Continue the active lead: ${lead.text}`,
-    };
-  }
-  if (gap && activeTopic.turnIds.length < HARD_MAX_TOPIC_TURNS && activeTopic.saturation < 0.85) {
-    return {
-      action: "CONTINUE_TOPIC", projectId: activeProject.id, topicId: activeTopic.id,
-      skill: skillFor(gap), selectedProbe: gapProbe(gap), targetGap: gap.type, reason: gap.description,
-    };
-  }
-  const nextTopic = activeProject.topics
-    .filter((topic) => topic.id !== activeTopic.id && topic.status !== "completed")
-    .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
-  return nextTopic
-    ? switchTopicDecision(activeProject, nextTopic, "The current topic is saturated.")
-    : nextProjectOrFinish(state, activeProject.id);
+export function startInterview(state: InterviewState): InterviewStep {
+  activateInterview(state);
+  return applyInterviewDecision(state, getDemoInterviewDecision(state));
 }
 
-function nextProjectOrFinish(state: InterviewState, currentProjectId: string): InterviewDecision {
-  const project = selectAnchorProject(
-    state.candidate.projects.filter((item) => item.id !== currentProjectId && item.status !== "completed"),
-  );
-  if (!project) return { action: "FINISH", reason: "No high-value project or topic remains." };
-  const topic = project.topics
-    .filter((item) => item.status === "candidate" || item.status === "paused")
-    .toSorted((left, right) => right.expectedInformationGain - left.expectedInformationGain)[0];
-  const gap = topic ? selectOpenGap(topic) : undefined;
+export function submitAnswer(
+  state: InterviewState,
+  answer: string,
+  proposedEvidence?: readonly EvidenceProposal[],
+  disposition: AnswerDisposition = "substantive",
+): InterviewStep {
+  const record = recordAnswer(state, answer, proposedEvidence, disposition);
+  const step = applyInterviewDecision(state, getDemoInterviewDecision(state), record.turn.id);
+  step.evidence = record.evidence;
+  return step;
+}
+
+function normalizeQuestion(value: string): string {
+  return value.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+
+function demoQuestion(state: InterviewState, field: ReportField, contradiction: boolean): string {
+  const project = state.candidate.projects.find((item) => item.id === field.projectId)!;
+  if (contradiction) return `关于“${project.name}”的个人贡献，前后信息不一致，准确情况是什么？`;
+  if (field.id.endsWith(":ownership")) return `在“${project.name}”中，你本人具体负责了哪些设计和实现？`;
+  if (field.id.endsWith(":mechanism")) return `“${project.name}”最关键的技术机制具体是怎么工作的？`;
+  if (field.id.endsWith(":measurement")) return `“${project.name}”的效果指标如何定义，基线和测试集分别是什么？`;
+  return `请讲一次“${project.name}”中的真实失败，你如何定位根因并验证修复？`;
+}
+
+// ponytail: deterministic demo extraction proves the report flow; configured LLM mode supplies grounded edits.
+function extractDemoEvidence(answer: string, project: Project, field: ReportField): EvidenceProposal {
+  const vague = /不清楚|不知道|忘了|记不清|没有保留/.test(answer);
+  const denial = /不是我|并不是我|没有主导/.test(answer);
+  const specificity = Math.min(1, 0.2 + answer.length / 80);
+  const claimIds = project.claims.filter((claim) =>
+    claim.relatedCompetencies.includes(field.competencyId)
+      || (field.id.endsWith(":ownership") && /负责|主导|设计|实现/.test(claim.text))
+      || (field.id.endsWith(":measurement") && /%|准确率|延迟|提升|降低/.test(claim.text))
+  ).map((claim) => claim.id);
   return {
-    action: "SWITCH_PROJECT",
-    projectId: project.id,
-    topicId: topic?.id,
-    skill: gap ? skillFor(gap) : undefined,
-    selectedProbe: gap ? gapProbe(gap) : undefined,
-    targetGap: gap?.type,
-    reason: "The current project has no useful open topic.",
+    reportFieldIds: [field.id],
+    claimIds,
+    competencyId: field.competencyId,
+    statement: vague ? `${field.name} 仍缺少可靠细节。` : `候选人说明了 ${field.name}。`,
+    polarity: denial ? "invalidate" : vague ? "weakness" : "support",
+    strength: vague ? 0.4 : 0.8,
+    specificity: vague ? Math.max(0.3, specificity) : Math.max(0.7, specificity),
+    evaluatorConfidence: 0.7,
+    sourceQuote: answer,
   };
 }

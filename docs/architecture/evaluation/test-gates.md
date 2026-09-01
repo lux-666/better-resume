@@ -2,114 +2,38 @@
 
 [返回 Evaluation 板块](README.md) · [返回架构 Map](../README.md)
 
-## 当前事实
-
-`npm test` 当前执行 18 个产品行为测试和 1 个架构结构测试：HTTP 六轮进程恢复/租约/幂等/旧问题拒绝、可执行 API Schema、Core 的强/弱/矛盾固定 Profile、Pi 的语义、Skill 加载、Provider/格式单次重试与自然问题契约，以及文档层级检查。TypeScript 检查、Web Production Build 和固定答案系统走查可运行。
-
-确定性 Profile 已分别在 6、6、8 轮完成并产生不同 Claim 结论；自动化不调用真实 Provider，尚未执行真实模型 Profile，因此仍不能对模型语义质量或候选人能力结论做有效性评价。
-
-## 验证顺序
-
-```text
-Domain determinism
-  → Model contract and semantic corpus
-  → HTTP durability and idempotency
-  → deterministic manual conformance
-  → fixed-profile model interviews
-  → small-sample human interviews
-```
-
 ## 自动化
 
-标准命令：
-
 ```bash
 npm test
+npm run typecheck
 npm run build
 ```
 
-配置 Provider 后逐个执行真实模型 Profile：
+测试必须覆盖：
 
-```bash
-npm run eval:model -- strong
-npm run eval:model -- weak
-npm run eval:model -- contradictory
-```
+- Candidate Report 初始化、grounded multi-field edit、Claim/Competency 更新；
+- Agent 可自由选择调查字段，Core 不做问题路由；
+- `finish_interview` 在重要字段 missing、Project 无 Evidence或矛盾 open 时被拒绝；
+- 强、弱、矛盾 Profile 在 15 轮内结束且 Report 可审计；
+- `read_report → edit_report` 和 `read_report → ask_candidate / finish_interview` 工具顺序；
+- 非法 Quote、虚构 ID、Competency 不匹配、多个问题、重复问题和 rubric 泄露被拒绝；
+- Answer 幂等、进程恢复、旧问题拒绝和 Provider 单次重试。
 
-Domain 测试必须覆盖 Anchor、Start、Evidence/Claim 链接、Quote、Competency 更新、Gap 路由、Topic/Project 切换、硬上限和 terminal rejection。
+自动化不证明真实模型的调查质量。
 
-模型语料至少覆盖具体、模糊、否认 Ownership、指标、矛盾和无关回答。断言 Schema、上下文 ID、数值范围、Quote、polarity 和后续 Policy；非法 Quote、虚构 ID 和越界数值必须拒绝。
+## 真实模型门槛
 
-HTTP 测试执行：
+同一模型依次运行 strong、weak、contradictory Profile：
 
-```text
-create → start → answer → process restart → state reload
-```
+- 每个 Session 最多 15 轮；
+- 不重复主问题；
+- 能沿具体技术线索纵向深入，而非机械枚举 Report field；
+- 所有 Evidence 有逐字 Quote；
+- weak 信息保留为 weak，不被补写成 supported；
+- open contradiction 未解决时不得结束；
+- Report 充分后主动调用 `finish_interview`。
 
-并断言 State 与 SQLite 一致、重复命令不重复数据、并发 Answer 只有一个成功、非法 Body 不改变 Session、Provider 超时后 Raw Turn 可恢复、错误映射符合契约。
+## 真人准入
 
-测试使用独立 Session 和固定语义。动态 ID 只验证存在性与引用一致性，不用整份 Snapshot 隐藏结构错误。
-
-## 固定答案系统走查
-
-要求 Node.js 22.19+。先执行：
-
-```bash
-npm install
-npm test
-npm run build
-```
-
-分别启动：
-
-```bash
-npm run dev
-npm run dev:web
-```
-
-打开 <http://localhost:5173>，创建并开始 Demo Session。第一轮输入：
-
-```text
-我负责检索架构设计，并独立实现切分、召回和 reranker 接入。
-```
-
-第二轮输入：
-
-```text
-准确率按人工标注测试集上的正确回答比例计算，基线为未加 reranker 的版本。
-```
-
-随后依次回答 RAG 故障、客服 Agent Ownership、延迟指标和工具调用故障；每轮都给出本人动作、对照口径或根因验证。
-
-通过标准：
-
-- 第一轮产生逐字 Ownership Evidence 并关联 Claim；
-- Ownership Gap 关闭并切换到 Evaluation；
-- 第二轮产生 Metric Evidence 并关联 Claim；
-- 第三轮切换 Failure，第四轮通过 `SWITCH_PROJECT` 进入客服 Agent；
-- 第六轮 Session 完成且没有重复 Turn/Evidence；
-- State API 与页面一致，API 重启后引用不丢失。
-
-该走查只证明 Web、API、SQLite 和确定性 Domain 闭环，不证明模型或评估质量。
-
-## 真人测试准入
-
-以下条件必须全部满足：
-
-- [x] Pi Extraction 通过 Schema、上下文和 Quote 校验并进入 Answer 主链；
-- [x] 模型语义语料覆盖具体、模糊、否认、矛盾和无关回答；
-- [x] `ownership-grill`、`metric-audit`、`failure-forensics` 可执行；
-- [ ] Question Generation 每轮只产生一个不重复主问题；
-- [x] Session 支持可恢复的 6–10 轮核心 Policy 转换；
-- [x] 强、弱、矛盾三个确定性固定 Profile 通过；
-- [ ] Provider 超时与重试不丢失或重复数据；
-- [x] UI 展示 Topic、Gap、Evidence 和 DecisionTrace；
-- [x] UI 展示服务端 Progress、显式 Demo/LLM 模式和每轮执行来源；
-- [x] Evidence 与 Question 全部可追溯到 State；
-- [x] Domain、Pi、HTTP 自动化与固定答案走查全部通过。
-
-## 真人测试协议
-
-准入后使用 3–5 名内部测试者，每人完成 2 次 Session，覆盖强、弱和矛盾 Profile。每轮记录 sessionId、turnCount、completionTime、重复/无关问题数、非法 Quote 数、错误 Topic 转换数、Provider 失败数、1–5 分审讯感和备注。
-
-每次失败必须能定位到原 Turn、Evidence、DecisionTrace、模型版本和 State。没有完整追踪链的体验反馈只作为线索，不能直接驱动评分规则变化。
+真实模型门槛通过后，使用 3–5 名内部测试者，每人完成两次 Session。记录完成时间、轮数、重复/无关问题、Evidence 错配、过早结束、审讯感和 Report 可用性。任何 grounding 违规或跨候选人数据泄露立即停止测试。

@@ -14,23 +14,24 @@ import {
   type RuntimeInfo,
 } from "../../../packages/api-contract/src/index.ts";
 import {
+  activateInterview,
+  applyInterviewDecision,
   createFixtureCandidate,
   createInterviewState,
+  getDemoInterviewDecision,
   getInterviewProgress,
-  setGeneratedPrompt,
+  HARD_MAX_TURNS,
+  recordAnswer,
   setStepExecution,
-  startInterview,
-  submitAnswer,
   type InterviewState,
   type InterviewStep,
   type StepExecutionTrace,
   type TaskExecutionTrace,
 } from "../../../packages/interview-core/src/index.ts";
 import {
+  decideNextStepWithAgent,
+  editReportWithAgent,
   EvidenceValidationError,
-  extractEvidenceWithAgent,
-  generateQuestionWithAgent,
-  loadInterviewSkill,
   ModelProviderError,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
@@ -332,20 +333,24 @@ function executionTrace(
   };
 }
 
-async function phraseQuestion(step: InterviewStep): Promise<TaskExecutionTrace | undefined> {
-  if (step.decision.action === "FINISH") return undefined;
-  if (runtime.mode === "demo") return demoTask();
+async function chooseNextStep(
+  state: InterviewState,
+  turnId?: string,
+): Promise<{ step: InterviewStep; trace?: TaskExecutionTrace }> {
+  if (state.turns.length >= HARD_MAX_TURNS) {
+    return {
+      step: applyInterviewDecision(state, {
+        action: "FINISH_INTERVIEW",
+        reason: "Hard turn limit reached.",
+      }, turnId),
+    };
+  }
+  if (runtime.mode === "demo") {
+    return { step: applyInterviewDecision(state, getDemoInterviewDecision(state), turnId), trace: demoTask() };
+  }
   if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
-  const result = await observeModelCall(() => generateQuestionWithAgent({
-    model,
-    streamFn,
-    state: step.state,
-    decision: step.decision,
-    skillInstruction: step.decision.skill ? loadInterviewSkill(step.decision.skill) : undefined,
-  }));
-  setGeneratedPrompt(step.state, result.value);
-  step.question = result.value.question;
-  return result.trace;
+  const result = await observeModelCall(() => decideNextStepWithAgent({ model, streamFn, state }));
+  return { step: applyInterviewDecision(state, result.value, turnId), trace: result.trace };
 }
 
 const server = createServer(async (request, response) => {
@@ -382,9 +387,9 @@ const server = createServer(async (request, response) => {
     if (method === "POST" && startMatch) {
       const state = loadState(startMatch[1]);
       if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
-      const step = startInterview(state);
-      const questionExecution = await phraseQuestion(step);
-      setStepExecution(state, executionTrace(undefined, questionExecution));
+      activateInterview(state);
+      const { step, trace } = await chooseNextStep(state);
+      setStepExecution(state, executionTrace(undefined, trace));
       saveState(state);
       return json(response, 200, stepResponse(step));
     }
@@ -402,29 +407,29 @@ const server = createServer(async (request, response) => {
       if (replay) return json(response, 200, replay);
       let completed = false;
       try {
-        let extraction;
+        let edit;
         let evidenceExecution: TaskExecutionTrace;
         if (runtime.mode === "llm") {
           if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
-          const result = await observeModelCall(() => extractEvidenceWithAgent({
+          const result = await observeModelCall(() => editReportWithAgent({
               model,
               streamFn,
               state,
               answer: command.answer,
             }));
-          extraction = result.value;
+          edit = result.value;
           evidenceExecution = result.trace;
         } else {
           evidenceExecution = demoTask();
         }
-        const step = submitAnswer(
+        const record = recordAnswer(
           state,
           command.answer,
-          extraction?.evidence,
-          extraction?.answerDisposition,
-          extraction,
+          edit?.evidence,
+          edit?.answerDisposition,
         );
-        const questionExecution = await phraseQuestion(step);
+        const { step, trace: questionExecution } = await chooseNextStep(state, record.turn.id);
+        step.evidence = record.evidence;
         setStepExecution(state, executionTrace(evidenceExecution, questionExecution));
         const result = stepResponse(step, command.commandId);
         completeAnswerCommand(state, command.commandId, result);
