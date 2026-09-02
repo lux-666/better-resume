@@ -1,9 +1,14 @@
 import {
   activateInterview,
   applyInterviewDecision,
+  buildCandidateFromIntake,
+  buildInterviewReportBundle,
+  buildInterviewRole,
   createFixtureCandidate,
   createInterviewState,
+  normalizeInterviewIntake,
   recordAnswer,
+  type InterviewIntake,
   type InterviewState,
 } from "../../../packages/interview-core/src/index.ts";
 import {
@@ -28,12 +33,66 @@ import {
 import { createModelRuntime, resolveAgentModelIds } from "./model-runtime.ts";
 import { buildEvaluationScorecard, renderEvaluationScorecard } from "./evaluation-scorecard.ts";
 
+const releaseScenarios: Array<{ id: string; profile: ModelProfileName; intake: InterviewIntake }> = [
+  {
+    id: "single-project-strong",
+    profile: "strong",
+    intake: {
+      candidate: {
+        name: "P2-S1",
+        skills: ["流程设计", "数据分析", "项目协作"],
+        projects: [{
+          name: "客户工单流程优化",
+          description: "负责客户工单流程设计与上线，通过固定样本验证使处理成功率从 62% 提升到 78%。",
+        }],
+      },
+      job: {
+        title: "业务流程经理",
+        introduction: "负责客户服务流程设计与持续改进。",
+        responsibilities: "设计业务流程，推动跨团队上线并复盘结果。",
+        requirements: "具备流程设计经验\n能够使用数据验证改进效果",
+      },
+    },
+  },
+  {
+    id: "multi-project-contradictory",
+    profile: "contradictory",
+    intake: {
+      candidate: {
+        name: "P2-S2",
+        skills: ["运营策略", "数据分析"],
+        projects: [
+          { name: "会员召回活动", description: "负责会员召回策略设计，带动月活提升 11%。" },
+          { name: "商家分层运营", description: "主导商家分层规则和运营流程落地。" },
+        ],
+      },
+      job: {
+        title: "运营策略经理",
+        introduction: "负责用户与商家运营策略。",
+        responsibilities: "制定分层策略，协调执行并评估业务效果。",
+        requirements: "具备策略设计经验\n能够独立分析运营结果",
+      },
+    },
+  },
+  {
+    id: "sparse-input-weak",
+    profile: "weak",
+    intake: {
+      candidate: {
+        name: "P2-S3",
+        skills: [],
+        projects: [{ name: "客户活动支持", description: "负责过客户活动支持。" }],
+      },
+    },
+  },
+];
+
 const requested = process.argv[2] ?? "all";
 if (requested === "--help") {
-  console.log(`Usage: npm run eval:model -- ${Object.keys(modelProfiles).join("|")}|all`);
+  console.log(`Usage: npm run eval:model -- ${Object.keys(modelProfiles).join("|")}|all|release`);
   process.exit(0);
 }
-const profiles = requested === "all"
+const profiles = requested === "release" ? releaseScenarios.map(({ profile }) => profile) : requested === "all"
   ? Object.keys(modelProfiles) as ModelProfileName[]
   : [requested as ModelProfileName];
 if (profiles.some((profile) => !(profile in modelProfiles))) {
@@ -90,10 +149,14 @@ async function askOrFinish(
 }
 
 async function runProfile(profile: ModelProfileName): Promise<boolean> {
+  const releaseScenario = requested === "release" ? releaseScenarios.find((item) => item.profile === profile) : undefined;
+  const intake = releaseScenario ? normalizeInterviewIntake(releaseScenario.intake) : undefined;
+  const role = intake ? buildInterviewRole({ job: intake.job }) : undefined;
   const state = createInterviewState(
-    `model-eval-${profile}-${Date.now()}`,
-    "llm_application_engineer",
-    createFixtureCandidate(profile),
+    `model-eval-${releaseScenario?.id ?? profile}-${Date.now()}`,
+    role ?? "llm_application_engineer",
+    intake && role ? buildCandidateFromIntake(intake, role) : createFixtureCandidate(profile),
+    intake,
   );
   const turns: EvaluationTurn[] = [];
   const telemetry: TelemetryTrace[] = [];
@@ -165,10 +228,19 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
 
   stage = "behavior_gate";
   const failures = evaluateProfileRun(profile, state, turns);
+  const reportBundle = buildInterviewReportBundle(state);
+  if (!reportBundle.report.integrity.valid) {
+    failures.push({
+      severity: "critical",
+      code: "report_integrity",
+      message: reportBundle.report.integrity.errors.join("; "),
+    });
+  }
   const scorecard = buildEvaluationScorecard({ profile, state, turns, failures, telemetry });
   console.log(JSON.stringify({
     type: "profile_result",
     status: failures.length === 0 ? "passed" : "failed",
+    scenario: requested === "release" ? releaseScenario?.id : undefined,
     profile,
     provider,
     modelId: reportModelId === interviewModelId ? reportModelId : undefined,
@@ -184,6 +256,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     })),
     report: state.report.fields.map(({ id, status, evidenceIds }) => ({ id, status, evidenceIds })),
     contradictions: state.report.contradictions,
+    candidateReport: reportBundle.report,
     turnComparisons: turns.map((turn) => ({
       index: turn.index,
       answer: turn.answer,
@@ -193,8 +266,8 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
       actualClaimIds: [...new Set(turn.edit.evidence.flatMap((item) => item.claimIds))].sort(),
     })),
     scorecard,
-    scorecardMarkdown: renderEvaluationScorecard(scorecard),
-    telemetry,
+    scorecardMarkdown: requested === "release" ? undefined : renderEvaluationScorecard(scorecard),
+    telemetry: requested === "release" ? undefined : telemetry,
     failures: failures.map((failure) => ({
       ...failure,
       transcript: minimalFailureTranscript(turns, failure),

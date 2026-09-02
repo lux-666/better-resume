@@ -519,9 +519,14 @@ function updateReport(state: InterviewState, evidence: Evidence): void {
 }
 
 function updateContradictions(state: InterviewState, evidence: readonly Evidence[]): void {
+  const openedInThisAnswer = new Set<string>();
   for (const item of evidence) {
     for (const claimId of item.claimIds) {
       const existing = state.report.contradictions.find((entry) => entry.claimId === claimId);
+      if (existing && openedInThisAnswer.has(claimId)) {
+        existing.evidenceIds.push(item.id);
+        continue;
+      }
       if (item.polarity === "invalidate") {
         if (existing) {
           if (existing.status === "open") {
@@ -538,6 +543,7 @@ function updateContradictions(state: InterviewState, evidence: readonly Evidence
             evidenceIds: [item.id],
             resolutionEvidenceIds: [],
           });
+          openedInThisAnswer.add(claimId);
         }
       } else if (existing?.status === "open") {
         existing.status = "resolved";
@@ -617,7 +623,8 @@ export function validateCandidateQuestion(question: string, acknowledgement?: st
   if (marks !== 1 || !/[?？]$/.test(question)) {
     throw new Error("Question output must contain exactly one final question mark");
   }
-  const requestedFacts = question.match(/为什么|如何|怎么|哪些|什么|多少|是否|哪(?:个|些|项|种|一)/g) ?? [];
+  const requestedFacts = question.replace(/(?:判断|验证|确认|评估)[^?？]*是否/g, "")
+    .match(/为什么|如何|怎么|哪些|什么|多少|是否|哪(?:个|些|项|种|一)/g) ?? [];
   if (requestedFacts.length > 1 || /以及|并且|分别/.test(question)) {
     throw new Error("Question output must request exactly one fact");
   }

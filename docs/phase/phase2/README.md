@@ -2,7 +2,7 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：In Progress — Task 2.1、2.2、2.3 已完成，Task 2.4 待执行**
+**状态：Completed — Task 2.4 发布 Gate 已通过，可发布 `v0.1.0` 本地 Demo**
 
 ## 业务目标
 
@@ -17,7 +17,7 @@
 | 2.1 候选人/JD Intake 与上传回填 | Completed | 普通填写、可选 Resume/JD 上传、结构化确认 |
 | 2.2 Session Role 与 Agent 上下文解耦 | Completed | 移除固定岗位和固定候选人语义，问题只读取当前 Session |
 | 2.3 候选人评估报告 | Completed | 客观、完整、可追溯且可指导招聘决策的 JSON/Markdown 报告 |
-| 2.4 真实端到端发布 Gate | Pending | 用真实输入和真实模型验证产品及比赛四项评分要求 |
+| 2.4 真实端到端发布 Gate | Completed | 三类真实输入与三类候选人行为通过真实模型、恢复和报告 Gate |
 
 ## Task 2.1：候选人/JD Intake 与上传回填
 
@@ -113,7 +113,7 @@ JSON 只包含 Candidate Report；Markdown 是同一份报告的人类可读渲�
 
 ## Task 2.4：真实端到端发布 Gate
 
-**状态：Pending。**
+**状态：Completed。** 结果见 [Task 2.4 发布 Gate](task-2.4-release-gate.md)。
 
 ### 目标
 
@@ -144,6 +144,8 @@ JSON 只包含 Candidate Report；Markdown 是同一份报告的人类可读渲�
 - Candidate Report 的 Schema 和建议口径稳定；
 - 产品流程可在进程重启和 Provider 可重试失败后继续；
 - 比赛评分材料与真实运行链路一致，不在产品报告内自评。
+
+以上退出标准已满足。Phase 2 的发布结论为 `v0.1.0` 本地 Demo **Go**；公开多租户服务不在本次发布范围。
 
 ## 明确不做
 

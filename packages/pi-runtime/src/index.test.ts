@@ -315,6 +315,11 @@ test("question guard rejects fake warmth and multiple questions", () => {
     acknowledgement: "明白，你负责的是召回部分。",
     question: "当时你为什么选择这种召回方案？",
   });
+  assert.deepEqual(validateQuestionGeneration({
+    question: "你用哪个具体指标判断执行结果是否符合预期？",
+  }), {
+    question: "你用哪个具体指标判断执行结果是否符合预期？",
+  });
   for (const value of [
     { acknowledgement: "很好，这证明你很优秀。", question: "接下来做了什么？" },
     { question: "你负责什么？效果如何？" },

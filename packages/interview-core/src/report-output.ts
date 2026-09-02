@@ -97,10 +97,12 @@ export interface InterviewReportBundle {
   markdown: string;
 }
 
-function recommendation(field: ReportField, projectName: string): string | undefined {
+function recommendation(field: ReportField, projectName: string, hasOpenContradiction: boolean): string | undefined {
   if (field.status === "missing") return `补充核验“${projectName}”的“${field.name}”，要求候选人给出一个具体事实、个人动作和可验证结果。`;
   if (field.status === "weak") return `进一步核实“${projectName}”的“${field.name}”，重点补充个人边界、判断依据和可复核细节。`;
-  if (field.status === "contradicted") return `在作出招聘判断前澄清“${projectName}”的“${field.name}”，逐项核对冲突说法及其时间、范围和结果。`;
+  if (field.status === "contradicted") return hasOpenContradiction
+    ? `在作出招聘判断前澄清“${projectName}”的“${field.name}”，逐项核对冲突说法及其时间、范围和结果。`
+    : `复核“${projectName}”的“${field.name}”更正结果，把已确认的实际贡献与原始候选人输入分开记录。`;
 }
 
 function conclusion(field: ReportField): string {
@@ -162,9 +164,9 @@ function finding(
 }
 
 function reportRecommendation(summary: CandidateReportArtifact["summary"]): CandidateReportArtifact["executiveSummary"]["recommendation"] {
-  if (summary.openContradictions > 0 || summary.contradicted > 0) return "hold_for_clarification";
+  if (summary.openContradictions > 0) return "hold_for_clarification";
   if (summary.supported === 0) return "insufficient_evidence";
-  if (summary.missing > 0 || summary.weak > 0) return "continue_with_verification";
+  if (summary.missing > 0 || summary.weak > 0 || summary.contradicted > 0) return "continue_with_verification";
   return "continue_process";
 }
 
@@ -179,7 +181,7 @@ function assessment(
     return "当前没有任何调查维度达到有充分证据支持的状态，不应据此对候选人能力作正面或负面判断。";
   }
   if (recommendationValue === "continue_with_verification") {
-    return `已有 ${summary.supported} 个维度获得支持，但仍有 ${summary.weak + summary.missing} 个维度证据不足，建议继续流程并定向核验。`;
+    return `已有 ${summary.supported} 个维度获得支持，但仍有 ${summary.weak + summary.missing} 个维度证据不足、${summary.contradicted} 个维度与候选人输入不一致，建议继续流程并定向核验。`;
   }
   return `当前 ${summary.supported} 个调查维度均形成了可追溯支持，未发现未决矛盾，可进入下一招聘环节。`;
 }
@@ -195,7 +197,8 @@ export function buildCandidateReportArtifact(
     name: project.name,
     candidateInput: project.description,
     fields: state.report.fields.filter((field) => field.projectId === project.id).map((field): CandidateReportFieldOutput => {
-      const nextRecommendation = recommendation(field, project.name);
+      const nextRecommendation = recommendation(field, project.name, state.report.contradictions.some((item) =>
+        item.projectId === project.id && item.status === "open"));
       return {
         fieldId: field.id,
         name: field.name,

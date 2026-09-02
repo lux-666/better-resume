@@ -132,6 +132,19 @@ test("contradictions block finish until grounded clarification resolves them", (
   assert.equal(state.report.contradictions[0].status, "resolved");
 });
 
+test("evidence from one answer cannot resolve its own contradiction", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const denial = "这个核心模块不是我做的。";
+  const first = evidenceFor(state, denial, "invalidate");
+  recordAnswer(state, denial, [first, { ...first, reportFieldIds: [state.report.fields[1].id],
+    competencyId: state.report.fields[1].competencyId }, { ...first, polarity: "weakness" }], "denial");
+
+  assert.equal(state.report.contradictions[0].status, "open");
+  assert.equal(state.report.contradictions[0].evidenceIds.length, 3);
+  assert.deepEqual(state.report.contradictions[0].resolutionEvidenceIds, []);
+});
+
 test("a repeated grounded denial clarifies a contradiction without reopening it", () => {
   const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
   startInterview(state);

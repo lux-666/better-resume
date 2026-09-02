@@ -125,7 +125,7 @@ export function fixedProfileResponse(
     answer = "top-50 是离线比较 20、50、100 后选的，50 的 Recall@20 已接近 100，但延迟低了 18ms。";
     coveredKinds = ["mechanism", "measurement"];
   } else if (contradiction) {
-    answer = `准确说法是：我在“${project.name}”中只负责接口联调，没有主导整体设计。`;
+    answer = `准确说法是：我在“${project.name}”中只负责按既定方案执行和记录结果，没有主导整体设计。`;
     polarity = "weakness";
     coveredKinds = ["ownership"];
   } else if (profile === "contradictory" && field.id.endsWith(":ownership")) {
@@ -144,16 +144,22 @@ export function fixedProfileResponse(
           : `问题由同事定位，我只协助复现，没有独立完成根因分析。`;
     if (field.id.endsWith(":failure")) coveredKinds = ["ownership", "failure"];
   } else if (profile === "strong") {
-    answer = strongAnswers[field.id];
+    answer = strongAnswers[field.id] ?? (field.id.endsWith(":ownership")
+      ? `我独立负责“${project.name}”的核心方案、实施和上线验证，其他成员只提供业务输入。`
+      : field.id.endsWith(":mechanism")
+        ? "我先明确目标和约束，再把方案拆成可检查的执行步骤，为每一步定义输入、输出和失败回退，并根据执行记录调整。"
+        : field.id.endsWith(":measurement")
+          ? "我使用上线前固定的 100 条样本，与同口径历史基线对照，成功率从 62% 提升到 78%。"
+          : "执行中曾出现结果重复；我通过操作记录定位到重复提交，修复后补了异常回归检查和告警。");
     if (field.id.endsWith(":failure")) coveredKinds = ["mechanism", "measurement", "failure"];
   } else {
     answer = field.id.endsWith(":ownership")
       ? `我独立负责“${project.name}”的核心设计、实现和上线验证，并记录了关键决策。`
       : field.id.endsWith(":mechanism")
-        ? `我把主流程拆成可观测步骤，明确了状态转换、失败回退和组件边界。`
+        ? `我把执行流程拆成准备、实施、核对和复盘四步，并为异常情况设置回退。`
         : field.id.endsWith(":measurement")
           ? `使用固定测试集，按成功请求占比统计，并与同流量基线做了对照。`
-          : `曾出现线上故障，我通过日志定位根因，修复后补了回归和告警。`;
+        : `执行中曾出现结果异常，我通过记录定位原因，修正后补了回归检查和告警。`;
   }
 
   return {

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  applyInterviewDecision, createFixtureCandidate, createInterviewState, recordAnswer, startInterview, submitAnswer,
+  applyInterviewDecision, buildCandidateFromIntake, buildInterviewRole, createFixtureCandidate, createInterviewState,
+  recordAnswer, startInterview, submitAnswer,
 } from "./index.ts";
 import {
   fixedProfileResponse, fixedProfiles, modelProfiles, type FixedProfileName,
@@ -111,6 +112,23 @@ test("fixed-answer Gold labels every materially supported report field", () => {
   }, secondRecord.turn.id);
   const third = fixedProfileResponse("vertical_depth", vertical);
   assert.deepEqual(third.evidence.flatMap((item) => item.claimIds), []);
+});
+
+test("strong profile supports session-specific project IDs", () => {
+  const intake = {
+    candidate: {
+      name: "P2-S1",
+      skills: ["用户研究"],
+      projects: [{ name: "新用户激活实验", description: "负责新用户激活流程设计与上线。" }],
+    },
+  };
+  const role = buildInterviewRole({});
+  const state = createInterviewState("release", role, buildCandidateFromIntake(intake, role), intake);
+  startInterview(state);
+
+  const response = fixedProfileResponse("strong", state);
+  assert.match(response.answer, /新用户激活实验/);
+  assert.ok(response.evidence.some((item) => item.claimIds.length > 0));
 });
 
 function applyInterviewDecisionAfterAnsweringFields(state: ReturnType<typeof createInterviewState>, targetFieldId: string) {

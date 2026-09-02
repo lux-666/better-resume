@@ -71,3 +71,22 @@ test("report gives actionable guidance for every unresolved field without treati
   assert.ok(bundle.report.evaluationBasis.some((item) => /missing/.test(item)));
   assert.equal(bundle.report.integrity.valid, true);
 });
+
+test("a resolved contradiction requires verification without claiming clarification is still open", () => {
+  const state = stateWithEvidence();
+  state.report.fields[1].status = "contradicted";
+  state.report.fields[1].evidenceIds = [...state.report.fields[0].evidenceIds];
+  state.report.contradictions.push({
+    id: "resolved",
+    claimId: state.candidate.projects[0].claims[0].id,
+    projectId: state.candidate.projects[0].id,
+    status: "resolved",
+    evidenceIds: [...state.report.fields[0].evidenceIds],
+    resolutionEvidenceIds: [...state.report.fields[0].evidenceIds],
+  });
+
+  const report = buildInterviewReportBundle(state).report;
+  assert.equal(report.executiveSummary.recommendation, "continue_with_verification");
+  assert.doesNotMatch(report.executiveSummary.assessment, /需要澄清/);
+  assert.match(report.executiveSummary.nextSteps.join("\n"), /复核.*更正结果/);
+});
