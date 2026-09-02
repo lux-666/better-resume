@@ -33,6 +33,8 @@ import {
   editReportWithAgent,
   EvidenceValidationError,
   ModelProviderError,
+  TelemetryCollector,
+  type TelemetryTrace,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
 import { createModelRuntime } from "./model-runtime.ts";
@@ -63,6 +65,14 @@ database.exec(`
     created_at TEXT NOT NULL,
     PRIMARY KEY (session_id, command_id),
     UNIQUE (session_id, question_id)
+  );
+  CREATE TABLE IF NOT EXISTS telemetry_traces (
+    trace_id TEXT PRIMARY KEY,
+    session_id TEXT,
+    command_id TEXT,
+    turn_id TEXT,
+    trace TEXT NOT NULL,
+    created_at TEXT NOT NULL
   );
 `);
 
@@ -146,6 +156,27 @@ function saveState(state: InterviewState): void {
   database
     .prepare("UPDATE sessions SET state = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(state), new Date().toISOString(), state.sessionId);
+}
+
+function saveTelemetry(trace: TelemetryTrace): void {
+  database.prepare(`
+    INSERT OR REPLACE INTO telemetry_traces (trace_id, session_id, command_id, turn_id, trace, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(trace.traceId, trace.sessionId ?? null, trace.commandId ?? null, trace.turnId ?? null,
+    JSON.stringify(trace), trace.startedAt);
+}
+
+function observeStateChange<T>(telemetry: TelemetryCollector, operation: string, change: () => T): T {
+  const span = telemetry.start(operation, "state");
+  try {
+    const value = change();
+    telemetry.finish(span);
+    return value;
+  } catch (error) {
+    telemetry.error(span, "state_error", error);
+    telemetry.finish(span);
+    throw error;
+  }
 }
 
 function stateVersion(state: InterviewState): number {
@@ -312,10 +343,16 @@ function releaseAnswerCommand(state: InterviewState, commandId: string): void {
 
 const demoTask = (): TaskExecutionTrace => ({ source: "demo", durationMs: 0, retryCount: 0 });
 
-async function observeModelCall<T>(operation: () => Promise<T>): Promise<{ value: T; trace: TaskExecutionTrace }> {
+async function observeModelCall<T>(
+  operation: (telemetry: TelemetryCollector) => Promise<T>,
+  telemetry: TelemetryCollector,
+): Promise<{ value: T; trace: TaskExecutionTrace }> {
   let retryCount = 0;
   const startedAt = performance.now();
-  const value = await withOneProviderRetry(operation, () => { retryCount += 1; });
+  const priorAgentSpans = telemetry.trace.spans.filter((span) => span.kind === "agent").length;
+  const value = await withOneProviderRetry(() => operation(telemetry), () => { retryCount += 1; });
+  telemetry.trace.spans.filter((item) => item.kind === "agent").slice(priorAgentSpans)
+    .forEach((span, attempt) => { span.retryCount = attempt; });
   return {
     value,
     trace: { source: "llm", durationMs: Math.round(performance.now() - startedAt), retryCount },
@@ -336,6 +373,8 @@ function executionTrace(
 async function chooseNextStep(
   state: InterviewState,
   turnId?: string,
+  commandId?: string,
+  telemetry?: TelemetryCollector,
 ): Promise<{ step: InterviewStep; trace?: TaskExecutionTrace }> {
   if (state.turns.length >= HARD_MAX_TURNS) {
     return {
@@ -349,7 +388,10 @@ async function chooseNextStep(
     return { step: applyInterviewDecision(state, getDemoInterviewDecision(state), turnId), trace: demoTask() };
   }
   if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
-  const result = await observeModelCall(() => decideNextStepWithAgent({ model, streamFn, state }));
+  const collector = telemetry ?? new TelemetryCollector({ sessionId: state.sessionId, commandId, turnId });
+  const result = await observeModelCall(
+    (current) => decideNextStepWithAgent({ model, streamFn, state, telemetry: current }), collector,
+  );
   return { step: applyInterviewDecision(state, result.value, turnId), trace: result.trace };
 }
 
@@ -387,11 +429,18 @@ const server = createServer(async (request, response) => {
     if (method === "POST" && startMatch) {
       const state = loadState(startMatch[1]);
       if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
-      activateInterview(state);
-      const { step, trace } = await chooseNextStep(state);
-      setStepExecution(state, executionTrace(undefined, trace));
-      saveState(state);
-      return json(response, 200, stepResponse(step));
+      const telemetry = new TelemetryCollector({ sessionId: state.sessionId });
+      try {
+        observeStateChange(telemetry, "activate_interview", () => activateInterview(state));
+        const { step, trace } = await chooseNextStep(state, undefined, undefined, telemetry);
+        observeStateChange(telemetry, "persist_state", () => {
+          setStepExecution(state, executionTrace(undefined, trace));
+          saveState(state);
+        });
+        return json(response, 200, stepResponse(step));
+      } finally {
+        saveTelemetry(telemetry.trace);
+      }
     }
 
     const answerMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/answer$/);
@@ -405,38 +454,42 @@ const server = createServer(async (request, response) => {
       const command: AnswerCommand = { ...body, answer: body.answer.trim() };
       const replay = claimAnswerCommand(state, command);
       if (replay) return json(response, 200, replay);
+      const telemetry = new TelemetryCollector({ sessionId: state.sessionId, commandId: command.commandId });
       let completed = false;
       try {
-        let edit;
+        let edit: Awaited<ReturnType<typeof editReportWithAgent>> | undefined;
         let evidenceExecution: TaskExecutionTrace;
         if (runtime.mode === "llm") {
           if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
-          const result = await observeModelCall(() => editReportWithAgent({
+          const result = await observeModelCall((telemetry) => editReportWithAgent({
               model,
               streamFn,
               state,
               answer: command.answer,
-            }));
+              telemetry,
+            }), telemetry);
           edit = result.value;
           evidenceExecution = result.trace;
         } else {
           evidenceExecution = demoTask();
         }
-        const record = recordAnswer(
-          state,
-          command.answer,
-          edit?.evidence,
-          edit?.answerDisposition,
+        const record = observeStateChange(telemetry, "apply_report_edit", () =>
+          recordAnswer(state, command.answer, edit?.evidence, edit?.answerDisposition));
+        telemetry.trace.turnId = record.turn.id;
+        for (const span of telemetry.trace.spans) span.turnId ??= record.turn.id;
+        const { step, trace: questionExecution } = await chooseNextStep(
+          state, record.turn.id, command.commandId, telemetry,
         );
-        const { step, trace: questionExecution } = await chooseNextStep(state, record.turn.id);
         step.evidence = record.evidence;
         setStepExecution(state, executionTrace(evidenceExecution, questionExecution));
         const result = stepResponse(step, command.commandId);
-        completeAnswerCommand(state, command.commandId, result);
+        observeStateChange(telemetry, "persist_answer_command_and_state", () =>
+          completeAnswerCommand(state, command.commandId, result));
         completed = true;
         return json(response, 200, result);
       } finally {
         if (!completed) releaseAnswerCommand(state, command.commandId);
+        saveTelemetry(telemetry.trace);
       }
     }
 
@@ -445,6 +498,20 @@ const server = createServer(async (request, response) => {
       const state = loadState(stateMatch[1]);
       if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
       return json(response, 200, stateResponse(state));
+    }
+    const traceMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/traces$/);
+    if (method === "GET" && traceMatch) {
+      const rows = database.prepare(`
+        SELECT trace FROM telemetry_traces WHERE session_id = ? ORDER BY created_at, trace_id
+      `).all(traceMatch[1]) as Array<{ trace: string }>;
+      return json(response, 200, rows.map((row) => JSON.parse(row.trace) as TelemetryTrace));
+    }
+    const traceIdMatch = pathname.match(/^\/api\/traces\/([\w-]+)$/);
+    if (method === "GET" && traceIdMatch) {
+      const row = database.prepare("SELECT trace FROM telemetry_traces WHERE trace_id = ?")
+        .get(traceIdMatch[1]) as { trace: string } | undefined;
+      if (!row) throw new HttpError(404, "NOT_FOUND", "Trace not found");
+      return json(response, 200, JSON.parse(row.trace) as TelemetryTrace);
     }
     throw new HttpError(404, "NOT_FOUND", "Route not found");
   } catch (error) {

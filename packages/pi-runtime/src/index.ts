@@ -8,6 +8,10 @@ import {
   type InterviewDecision,
   type InterviewState,
 } from "../../interview-core/src/index.ts";
+import { TelemetryCollector, type TelemetryTrace } from "./telemetry.ts";
+
+export { TelemetryCollector } from "./telemetry.ts";
+export type { TelemetryTrace } from "./telemetry.ts";
 
 type AgentOptions = ConstructorParameters<typeof Agent>[0];
 
@@ -263,16 +267,31 @@ function createAgent(options: {
   streamFn: AgentOptions["streamFn"];
   tools: AgentTool[];
   prompt: string;
+  operation: "report_agent" | "interview_agent";
+  telemetry?: TelemetryCollector;
 }): Agent {
-  return new Agent({
+  const agentSpan = options.telemetry?.start(options.operation, "agent");
+  const agent = new Agent({
     initialState: {
       systemPrompt: options.prompt,
       model: options.model,
       tools: options.tools,
     },
-    streamFn: options.streamFn,
+    streamFn: options.telemetry && agentSpan
+      ? options.telemetry.instrumentStreamFn(options.streamFn, agentSpan.spanId)
+      : options.streamFn,
     toolExecution: "sequential",
   });
+  if (options.telemetry && agentSpan) {
+    agent.subscribe((event) => {
+      options.telemetry!.recordAgentEvent(event, agentSpan.spanId);
+      if (event.type === "agent_end") {
+        if (agent.state.errorMessage) options.telemetry!.error(agentSpan, "runtime_error", agent.state.errorMessage);
+        options.telemetry!.finish(agentSpan);
+      }
+    });
+  }
+  return agent;
 }
 
 function lastToolError(agent: Agent): string | undefined {
@@ -288,6 +307,7 @@ export async function editReportWithAgent(options: {
   streamFn: AgentOptions["streamFn"];
   state: InterviewState;
   answer: string;
+  telemetry?: TelemetryCollector;
 }): Promise<ReportEdit> {
   const { project } = getActiveInterviewContext(options.state);
   const fields = options.state.report.fields.filter((field) => field.projectId === project.id);
@@ -346,6 +366,8 @@ export async function editReportWithAgent(options: {
       "Preserve every sourceQuote verbatim. Resume claims are not evidence.",
       "Do not plan the next question and do not output prose.",
     ].join("\n"),
+    telemetry: options.telemetry,
+    operation: "report_agent",
   });
   agent.shouldStopAfterTurn = ({ toolResults }) => {
     validationFailures += toolResults.filter((result) => result.toolName === "edit_report" && result.isError).length;
@@ -369,6 +391,7 @@ export async function decideNextStepWithAgent(options: {
   streamFn: AgentOptions["streamFn"];
   state: InterviewState;
   onFinishRejected?: (blockers: readonly string[]) => void;
+  telemetry?: TelemetryCollector;
 }): Promise<InterviewDecision> {
   let reportRead = false;
   let accepted: InterviewDecision | undefined;
@@ -445,6 +468,8 @@ export async function decideNextStepWithAgent(options: {
       "When completion.allowed is true, use finish_interview; if rejected, ask about one blocker.",
       "Do not output prose outside tools.",
     ].join("\n"),
+    telemetry: options.telemetry,
+    operation: "interview_agent",
   });
   agent.shouldStopAfterTurn = ({ toolResults }) => {
     validationFailures += toolResults.filter((result) => result.isError).length;

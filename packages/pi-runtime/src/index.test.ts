@@ -20,6 +20,7 @@ import {
   decideNextStepWithAgent,
   editReportWithAgent,
   ModelProviderError,
+  TelemetryCollector,
   validateQuestionGeneration,
   validateReportEdit,
   withOneProviderRetry,
@@ -121,6 +122,30 @@ test("Report Agent reads before submitting a grounded edit", async () => {
     model: faux.getModel(), streamFn: models.streamSimple.bind(models), state, answer,
   }), edit);
   assert.equal(faux.state.callCount, 2);
+});
+
+test("telemetry records every model request and tool call without storing context content", async () => {
+  const state = createInterviewState("telemetry-session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const answer = "我独立实现了召回模块。";
+  const edit = reportEdit(answer, "support");
+  const faux = fauxProvider();
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("read_report", {}), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("edit_report", edit), { stopReason: "toolUse" }),
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const telemetry = new TelemetryCollector({ sessionId: state.sessionId, commandId: "command" });
+  await editReportWithAgent({
+    model: faux.getModel(), streamFn: models.streamSimple.bind(models), state, answer, telemetry,
+  });
+  const modelSpans = telemetry.trace.spans.filter((span) => span.kind === "model");
+  const toolSpans = telemetry.trace.spans.filter((span) => span.kind === "tool");
+  assert.equal(modelSpans.length, 2);
+  assert.deepEqual(toolSpans.map((span) => span.toolName), ["read_report", "edit_report"]);
+  assert.ok(modelSpans.every((span) => span.context?.fingerprint.length === 64));
+  assert.doesNotMatch(JSON.stringify(telemetry.trace), /我独立实现了召回模块/);
 });
 
 test("Report Agent repairs denial evidence that omits the denied claim", async () => {

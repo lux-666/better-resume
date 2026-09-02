@@ -86,6 +86,11 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   const started = await post(`/api/interviews/${sessionId}/start`, {});
   assert.equal(started.body.stateVersion, 1);
   assert.equal(started.body.state.traces[0].execution.question.source, "demo");
+  const traces = await get(`/api/interviews/${sessionId}/traces`);
+  assert.equal(traces.response.status, 200);
+  assert.equal(Array.isArray(traces.body), true);
+  assert.equal((traces.body as any[]).length, 1);
+  assert.ok((traces.body as any[])[0].spans.some((span: { operation: string }) => span.operation === "persist_state"));
   const command = {
     commandId: "command-1",
     questionId: started.body.questionId,
