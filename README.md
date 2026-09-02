@@ -10,6 +10,7 @@
 - 可执行 HTTP Schema、幂等 Answer Command、旧问题拒绝与 Provider 单次重试
 - `read_report → edit_report → ask_candidate / finish_interview` Agent 主链
 - Evidence 原话校验、重要报告字段覆盖、矛盾检查、单问题约束和 15 轮硬上限
+- 客观、完整、可追溯并包含招聘建议的 Candidate Report JSON/Markdown 下载
 - 强、弱、矛盾三类固定 Profile
 
 ## 文档导航

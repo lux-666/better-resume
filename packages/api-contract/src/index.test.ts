@@ -8,7 +8,9 @@ import {
   CreateInterviewBodySchema,
   InterviewStateResponseSchema,
   InterviewStepResponseSchema,
+  InterviewReportResponseSchema,
 } from "./index.ts";
+import { buildInterviewReportBundle } from "../../interview-core/src/index.ts";
 
 test("HTTP command and error envelopes are executable contracts", () => {
   assert.equal(Check(CreateInterviewBodySchema, {
@@ -80,4 +82,7 @@ test("HTTP command and error envelopes are executable contracts", () => {
     ...response,
     state: { ...state, traces: [{ ...state.traces[0], action: "INVENTED_ACTION" }] },
   }), false);
+  assert.equal(Check(InterviewReportResponseSchema, buildInterviewReportBundle(state, {
+    generatedAt: "2026-09-02T00:00:00.000Z",
+  })), true);
 });

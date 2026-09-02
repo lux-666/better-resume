@@ -18,6 +18,7 @@ import {
   activateInterview,
   applyInterviewDecision,
   buildCandidateFromIntake,
+  buildInterviewReportBundle,
   buildInterviewRole,
   createLegacyInterviewRole,
   createInterviewState,
@@ -530,6 +531,12 @@ const server = createServer(async (request, response) => {
       const state = loadState(stateMatch[1]);
       if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
       return json(response, 200, stateResponse(state));
+    }
+    const reportMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/report$/);
+    if (method === "GET" && reportMatch) {
+      const state = loadState(reportMatch[1]);
+      if (!state) throw new HttpError(404, "NOT_FOUND", "Interview not found");
+      return json(response, 200, buildInterviewReportBundle(state));
     }
     const traceMatch = pathname.match(/^\/api\/interviews\/([\w-]+)\/traces$/);
     if (method === "GET" && traceMatch) {

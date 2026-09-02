@@ -676,6 +676,15 @@ export function setStepExecution(state: InterviewState, execution: StepExecution
 }
 
 export { buildCandidateFromIntake, buildInterviewRole, normalizeInterviewIntake } from "./intake.ts";
+export {
+  buildCandidateReportArtifact,
+  buildInterviewReportBundle,
+  renderInterviewReportMarkdown,
+} from "./report-output.ts";
+export type {
+  CandidateReportArtifact,
+  InterviewReportBundle,
+} from "./report-output.ts";
 
 export function getDemoInterviewDecision(state: InterviewState): InterviewDecision {
   const openContradiction = state.report.contradictions.find((item) => item.status === "open");

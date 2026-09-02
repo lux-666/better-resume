@@ -218,4 +218,12 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   assert.equal(current.state.report.status, "complete");
   assert.ok(current.state.candidate.projects.flatMap((project: { claims: Array<{ status: string }> }) => project.claims)
     .every((claim: { status: string }) => claim.status === "supported"));
+  const report = await get(`/api/interviews/${sessionId}/report`);
+  assert.equal(report.response.status, 200);
+  assert.equal(report.body.report.status, "complete");
+  assert.equal(report.body.report.integrity.valid, true);
+  assert.equal(report.body.report.executiveSummary.recommendation, "continue_process");
+  assert.equal("scorecard" in report.body, false);
+  assert.match(report.body.markdown, /# 候选人评估报告/);
+  assert.match(report.body.markdown, /## 招聘方下一步建议/);
 });

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type {
   AnswerCommand,
   ApiError,
+  InterviewReportResponse,
   InterviewStateResponse,
   InterviewStepResponse,
   RuntimeInfo,
@@ -276,6 +277,25 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadInterviewReport(format: "json" | "markdown"): Promise<void> {
+    if (!interview) return;
+    try {
+      setError("");
+      const bundle = await request<InterviewReportResponse>(`/api/interviews/${interview.sessionId}/report`);
+      const content = format === "json" ? JSON.stringify(bundle.report, null, 2) : bundle.markdown;
+      const url = URL.createObjectURL(new Blob([content], {
+        type: format === "json" ? "application/json" : "text/markdown",
+      }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `candidate-report-${interview.sessionId}.${format === "json" ? "json" : "md"}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "报告下载失败");
+    }
+  }
+
   function submit(): void {
     const questionId = session?.questionId;
     if (!interview || !session || !questionId || !answer.trim()) return;
@@ -485,6 +505,14 @@ function App() {
             </button>
           </>}
           {interview?.status === "completed" && <p className="done">本轮证据采集完成。</p>}
+          {interview && <>
+            <button className="secondary" onClick={() => void downloadInterviewReport("json")}>
+              下载{interview.status === "completed" ? "最终" : "当前"} Report JSON
+            </button>
+            <button className="secondary" onClick={() => void downloadInterviewReport("markdown")}>
+              下载{interview.status === "completed" ? "最终" : "当前"} Report Markdown
+            </button>
+          </>}
           {pilotMode && interview && <button className="secondary" onClick={exportPilotSession}>
             下载 Pilot Session JSON
           </button>}

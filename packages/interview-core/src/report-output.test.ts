@@ -1,0 +1,73 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  buildInterviewReportBundle,
+  createFixtureCandidate,
+  createInterviewState,
+  recordAnswer,
+  startInterview,
+} from "./index.ts";
+
+function stateWithEvidence() {
+  const state = createInterviewState("report-session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const field = state.report.fields.find((item) => item.id === state.traces.at(-1)?.targetFieldId)!;
+  const answer = "我负责核心流程设计，并完成了上线检查。";
+  recordAnswer(state, answer, [{
+    reportFieldIds: [field.id],
+    claimIds: [],
+    competencyId: field.competencyId,
+    statement: "候选人说明了个人负责范围和交付。",
+    polarity: "support",
+    strength: 0.8,
+    specificity: 0.8,
+    evaluatorConfidence: 0.8,
+    sourceQuote: answer,
+  }]);
+  return state;
+}
+
+test("candidate report links conclusions to questions, answer quotes, and evidence IDs", () => {
+  const bundle = buildInterviewReportBundle(stateWithEvidence(), {
+    generatedAt: "2026-09-02T00:00:00.000Z",
+  });
+  const supported = bundle.report.projects.flatMap((project) => project.fields)
+    .find((field) => field.status === "supported")!;
+
+  assert.equal(bundle.report.integrity.valid, true);
+  assert.equal(supported.evidence.length, 1);
+  assert.match(supported.evidence[0].question, /企业 RAG/);
+  assert.equal(supported.evidence[0].answerQuote, "我负责核心流程设计，并完成了上线检查。");
+  assert.equal(bundle.report.executiveSummary.recommendation, "continue_with_verification");
+  assert.equal(bundle.report.executiveSummary.strengths[0].evidenceIds[0], supported.evidence[0].evidenceId);
+  assert.match(bundle.markdown, /## 综合判断/);
+  assert.match(bundle.markdown, /## 已验证优势/);
+  assert.match(bundle.markdown, new RegExp(supported.evidence[0].evidenceId));
+  assert.equal("scorecard" in bundle, false);
+});
+
+test("report integrity fails when an evidence quote cannot be traced to its answer", () => {
+  const state = stateWithEvidence();
+  state.turns[0].answer = "被篡改的回答";
+  const bundle = buildInterviewReportBundle(state, {
+    generatedAt: "2026-09-02T00:00:00.000Z",
+  });
+
+  assert.equal(bundle.report.integrity.valid, false);
+  assert.ok(bundle.report.integrity.errors.some((error) => /source quote is not in the answer/.test(error)));
+});
+
+test("report gives actionable guidance for every unresolved field without treating missing as failure", () => {
+  const state = createInterviewState("empty-report", "role", createFixtureCandidate("Candidate"));
+  const bundle = buildInterviewReportBundle(state, {
+    generatedAt: "2026-09-02T00:00:00.000Z",
+  });
+
+  assert.equal(bundle.report.executiveSummary.recommendation, "insufficient_evidence");
+  assert.equal(bundle.report.executiveSummary.evidenceGaps.length, state.report.fields.length);
+  assert.equal(bundle.report.executiveSummary.nextSteps.length, state.report.fields.length);
+  assert.ok(bundle.report.executiveSummary.evidenceGaps.every((item) => /不能形成正面或负面能力结论/.test(item.reason)));
+  assert.ok(bundle.report.executiveSummary.nextSteps.every((item) => /具体事实、个人动作和可验证结果/.test(item)));
+  assert.ok(bundle.report.evaluationBasis.some((item) => /missing/.test(item)));
+  assert.equal(bundle.report.integrity.valid, true);
+});

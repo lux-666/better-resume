@@ -239,6 +239,114 @@ export const InterviewProgressSchema = Type.Object({
   contradictionsOpen: Type.Integer({ minimum: 0 }),
 }, { additionalProperties: false });
 
+const CandidateReportEvidenceReferenceSchema = Type.Object({
+  evidenceId: Type.String(),
+  turnId: Type.String(),
+  question: Type.String(),
+  answerQuote: Type.String(),
+  statement: Type.String(),
+  polarity: Type.Union([Type.Literal("support"), Type.Literal("weakness"), Type.Literal("invalidate")]),
+  strength: Type.Number({ minimum: 0, maximum: 1 }),
+  specificity: Type.Number({ minimum: 0, maximum: 1 }),
+  evaluatorConfidence: Type.Number({ minimum: 0, maximum: 1 }),
+}, { additionalProperties: false });
+
+const CandidateReportFieldOutputSchema = Type.Object({
+  fieldId: Type.String(),
+  name: Type.String(),
+  description: Type.String(),
+  status: Type.Union([
+    Type.Literal("missing"), Type.Literal("weak"),
+    Type.Literal("supported"), Type.Literal("contradicted"),
+  ]),
+  conclusion: Type.String(),
+  evidence: Type.Array(CandidateReportEvidenceReferenceSchema),
+  recommendation: Type.Optional(Type.String()),
+}, { additionalProperties: false });
+
+const CandidateReportFindingSchema = Type.Object({
+  projectId: Type.String(),
+  projectName: Type.String(),
+  fieldId: Type.String(),
+  fieldName: Type.String(),
+  status: Type.Union([
+    Type.Literal("missing"), Type.Literal("weak"),
+    Type.Literal("supported"), Type.Literal("contradicted"),
+  ]),
+  conclusion: Type.String(),
+  evidenceIds: Type.Array(Type.String()),
+}, { additionalProperties: false });
+
+const CandidateReportGapSchema = Type.Object({
+  projectId: Type.String(),
+  projectName: Type.String(),
+  fieldId: Type.String(),
+  fieldName: Type.String(),
+  reason: Type.String(),
+  recommendedAction: Type.String(),
+}, { additionalProperties: false });
+
+const CandidateReportArtifactSchema = Type.Object({
+  schemaVersion: Type.Literal("candidate-report-v0.1"),
+  sessionId: Type.String(),
+  generatedAt: Type.String(),
+  status: Type.Union([Type.Literal("in_progress"), Type.Literal("complete")]),
+  candidate: Type.Object({
+    name: Type.String(),
+    skills: Type.Array(Type.String()),
+  }, { additionalProperties: false }),
+  role: Type.Object({
+    name: Type.String(),
+    source: Type.Union([Type.Literal("generic"), Type.Literal("job_description"), Type.Literal("legacy_role")]),
+    description: Type.String(),
+    requirements: Type.Array(Type.String()),
+  }, { additionalProperties: false }),
+  executiveSummary: Type.Object({
+    recommendation: Type.Union([
+      Type.Literal("insufficient_evidence"), Type.Literal("continue_process"),
+      Type.Literal("continue_with_verification"), Type.Literal("hold_for_clarification"),
+    ]),
+    assessment: Type.String(),
+    rationale: Type.Array(Type.String()),
+    strengths: Type.Array(CandidateReportFindingSchema),
+    concerns: Type.Array(CandidateReportFindingSchema),
+    evidenceGaps: Type.Array(CandidateReportGapSchema),
+    nextSteps: Type.Array(Type.String()),
+  }, { additionalProperties: false }),
+  summary: Type.Object({
+    supported: Type.Integer({ minimum: 0 }),
+    weak: Type.Integer({ minimum: 0 }),
+    contradicted: Type.Integer({ minimum: 0 }),
+    missing: Type.Integer({ minimum: 0 }),
+    openContradictions: Type.Integer({ minimum: 0 }),
+  }, { additionalProperties: false }),
+  projects: Type.Array(Type.Object({
+    projectId: Type.String(),
+    name: Type.String(),
+    candidateInput: Type.String(),
+    fields: Type.Array(CandidateReportFieldOutputSchema),
+  }, { additionalProperties: false })),
+  contradictions: Type.Array(Type.Object({
+    contradictionId: Type.String(),
+    projectName: Type.Optional(Type.String()),
+    claim: Type.String(),
+    status: Type.Union([Type.Literal("open"), Type.Literal("resolved")]),
+    evidenceIds: Type.Array(Type.String()),
+    resolutionEvidenceIds: Type.Array(Type.String()),
+  }, { additionalProperties: false })),
+  evaluationBasis: Type.Array(Type.String()),
+  limitations: Type.Array(Type.String()),
+  integrity: Type.Object({
+    valid: Type.Boolean(),
+    errors: Type.Array(Type.String()),
+  }, { additionalProperties: false }),
+}, { additionalProperties: false });
+
+export const InterviewReportResponseSchema = Type.Object({
+  report: CandidateReportArtifactSchema,
+  markdown: Type.String(),
+}, { additionalProperties: false });
+
 export const InterviewStateResponseSchema = Type.Object({
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
@@ -264,6 +372,7 @@ export type CreateInterviewBody = Static<typeof CreateInterviewBodySchema>;
 export type AnswerCommand = Static<typeof AnswerCommandSchema>;
 export type ApiError = Static<typeof ApiErrorSchema>;
 export type RuntimeInfo = Static<typeof RuntimeInfoSchema>;
+export type InterviewReportResponse = Static<typeof InterviewReportResponseSchema>;
 
 export interface InterviewStateResponse {
   state: InterviewState;

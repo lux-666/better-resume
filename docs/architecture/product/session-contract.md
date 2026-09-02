@@ -10,9 +10,12 @@ POST /api/interviews
 POST /api/interviews/:id/start
 POST /api/interviews/:id/answer
 GET  /api/interviews/:id/state
+GET  /api/interviews/:id/report
 ```
 
 `POST /api/interviews` 接收结构化 Candidate（姓名、技能、至少一个 Project）和可选结构化 Job（岗位、岗位介绍、职责、要求）。上传文件在浏览器回填后即丢弃，API 不接收文件或原始文档。State/Step 响应包含会话级 `InterviewIntake`、`InterviewRole`、显式 Runtime、Candidate Report 进度、当前问题与 DecisionTrace。`coveragePercent` 由非 missing Report field 与当前 Session Role 的核心 Competency 共同计算；轮数单独展示。
+
+`GET /api/interviews/:id/report` 从当前持久化 State 生成 Candidate Report 和 Markdown，不额外调用模型。报告包含综合判断、优势、关注项、证据缺口和招聘方下一步建议；完整性校验要求结论能够沿 `Field → Evidence → Turn → Answer Quote` 追溯。接口不输出系统自评分。
 
 ## Answer 事务
 
