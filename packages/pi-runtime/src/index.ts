@@ -166,6 +166,11 @@ export function buildReportAgentView(state: InterviewState): unknown {
   return {
     objective: state.report.objective,
     status: state.report.status,
+    role: {
+      id: state.role.id,
+      name: state.role.name,
+      requirements: state.role.requirements,
+    },
     focusedFieldId: focusedField.id,
     activeProject: {
       id: project.id,
@@ -215,6 +220,13 @@ export function buildInterviewAgentView(state: InterviewState): unknown {
   return {
     objective: state.report.objective,
     status: state.report.status,
+    role: {
+      id: state.role.id,
+      name: state.role.name,
+      description: state.role.description,
+      requirements: state.role.requirements,
+      competencies: state.role.competencies.map(({ id, name, core }) => ({ id, name, core })),
+    },
     focusedProject: focusedProject && {
       id: focusedProject.id,
       name: focusedProject.name,
@@ -363,7 +375,7 @@ export async function editReportWithAgent(options: {
       "If answerDisposition is vague, every evidence polarity must be weakness; if irrelevant, evidence must be empty.",
       "If answerDisposition is denial or contradiction, include invalidate evidence linked to the exact denied claim ID from allowedClaimIds.",
       "Do not use denial or contradiction when the answer does not deny a listed claim; classify it as substantive or vague instead.",
-      "Preserve every sourceQuote verbatim. Resume claims are not evidence.",
+      "Preserve every sourceQuote verbatim. Resume and candidate-input claims are not evidence.",
       "Do not plan the next question and do not output prose.",
     ].join("\n"),
     telemetry: options.telemetry,

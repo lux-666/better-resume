@@ -3,8 +3,9 @@ import type { InterviewProgress, InterviewState, InterviewStep } from "../../int
 
 const ClaimSchema = Type.Object({
   id: Type.String(),
-  source: Type.Union([Type.Literal("resume"), Type.Literal("candidate_answer")]),
+  source: Type.Union([Type.Literal("resume"), Type.Literal("candidate_input"), Type.Literal("candidate_answer")]),
   text: Type.String(),
+  sourceQuote: Type.Optional(Type.String()),
   projectId: Type.Optional(Type.String()),
   status: Type.Union([
     Type.Literal("unverified"), Type.Literal("supported"),
@@ -36,6 +37,45 @@ const CandidateProfileSchema = Type.Object({
   projects: Type.Array(ProjectSchema),
   skills: Type.Array(Type.String()),
   claims: Type.Array(ClaimSchema),
+}, { additionalProperties: false });
+
+const RoleCompetencySchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  weight: Type.Number({ minimum: 0, maximum: 1 }),
+  core: Type.Boolean(),
+}, { additionalProperties: false });
+
+const InterviewRoleSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  source: Type.Union([Type.Literal("generic"), Type.Literal("job_description"), Type.Literal("legacy_role")]),
+  description: Type.String(),
+  requirements: Type.Array(Type.String()),
+  competencies: Type.Array(RoleCompetencySchema),
+}, { additionalProperties: false });
+
+const CandidateProjectIntakeSchema = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 160 }),
+  description: Type.String({ minLength: 1, maxLength: 8_000 }),
+}, { additionalProperties: false });
+
+const CandidateIntakeSchema = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 100 }),
+  skills: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { maxItems: 50 }),
+  projects: Type.Array(CandidateProjectIntakeSchema, { minItems: 1, maxItems: 12 }),
+}, { additionalProperties: false });
+
+const JobIntakeSchema = Type.Object({
+  title: Type.String({ minLength: 1, maxLength: 120 }),
+  introduction: Type.String({ minLength: 1, maxLength: 8_000 }),
+  responsibilities: Type.String({ minLength: 1, maxLength: 12_000 }),
+  requirements: Type.String({ minLength: 1, maxLength: 12_000 }),
+}, { additionalProperties: false });
+
+const InterviewIntakeSchema = Type.Object({
+  candidate: CandidateIntakeSchema,
+  job: Type.Optional(JobIntakeSchema),
 }, { additionalProperties: false });
 
 const ReportFieldSchema = Type.Object({
@@ -138,6 +178,8 @@ const DecisionTraceSchema = Type.Object({
 export const InterviewStateSchema = Type.Object({
   sessionId: Type.String(),
   roleId: Type.String(),
+  role: InterviewRoleSchema,
+  intake: InterviewIntakeSchema,
   status: Type.Union([Type.Literal("draft"), Type.Literal("active"), Type.Literal("completed")]),
   currentAcknowledgement: Type.Optional(Type.String()),
   currentQuestion: Type.Optional(Type.String()),
@@ -158,7 +200,8 @@ export const InterviewDecisionSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const CreateInterviewBodySchema = Type.Object({
-  candidateName: Type.Optional(Type.String({ maxLength: 100 })),
+  candidate: CandidateIntakeSchema,
+  job: Type.Optional(JobIntakeSchema),
 }, { additionalProperties: false });
 
 export const AnswerCommandSchema = Type.Object({

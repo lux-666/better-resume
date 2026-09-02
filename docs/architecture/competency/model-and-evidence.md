@@ -6,6 +6,7 @@
 
 ```text
 InterviewState
+├── InterviewIntake / InterviewRole
 ├── CandidateProfile / Project / Claim
 ├── CandidateReport
 │   ├── ReportField[]
@@ -16,7 +17,7 @@ InterviewState
 └── DecisionTrace[]
 ```
 
-Candidate Report 是 Agent 的工作区。当前每个 Fixture Project 初始化四个报告字段：Ownership、Architecture and mechanism、Measurement、Failure analysis。字段状态为 `missing | weak | supported | contradicted`，并只通过 Evidence 更新。
+Candidate Report 是 Agent 的工作区。当前每个 Candidate Project 初始化四个通用报告字段：Ownership、Architecture and mechanism、Measurement、Failure analysis。字段状态为 `missing | weak | supported | contradicted`，并只通过 Evidence 更新。
 
 ## Evidence
 
@@ -35,7 +36,7 @@ sourceQuote
 
 ## Claim 与矛盾
 
-Resume Claim 初始为 `unverified`。support、weakness、invalidate 分别追加到对应 Evidence ID 集合。invalidate 创建 open ReportContradiction；后续 Claim-linked support 或 weakness 可把该矛盾标记为 resolved，但历史 contradicting Evidence 不删除。
+Resume Claim 和普通填写生成的 Candidate Input Claim 初始为 `unverified`，并保留项目经历中的逐字 source quote。Candidate Input Claim 不是 Evidence。support、weakness、invalidate 分别追加到对应 Evidence ID 集合。invalidate 创建 open ReportContradiction；后续 Claim-linked support 或 weakness 可把该矛盾标记为 resolved，但历史 contradicting Evidence 不删除。
 
 ## Competency
 

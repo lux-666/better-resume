@@ -2,8 +2,9 @@ export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW";
 
 export interface Claim {
   id: string;
-  source: "resume" | "candidate_answer";
+  source: "resume" | "candidate_input" | "candidate_answer";
   text: string;
+  sourceQuote?: string;
   projectId?: string;
   status: "unverified" | "supported" | "weakened" | "contradicted";
   relatedCompetencies: string[];
@@ -32,6 +33,43 @@ export interface CandidateProfile {
   projects: Project[];
   skills: string[];
   claims: Claim[];
+}
+
+export interface RoleCompetency {
+  id: string;
+  name: string;
+  weight: number;
+  core: boolean;
+}
+
+export interface InterviewRole {
+  id: string;
+  name: string;
+  source: "generic" | "job_description" | "legacy_role";
+  description: string;
+  requirements: string[];
+  competencies: RoleCompetency[];
+}
+
+export interface CandidateProjectIntake {
+  name: string;
+  description: string;
+}
+
+export interface CandidateIntake {
+  name: string;
+  skills: string[];
+  projects: CandidateProjectIntake[];
+}
+
+export interface InterviewIntake {
+  candidate: CandidateIntake;
+  job?: {
+    title: string;
+    introduction: string;
+    responsibilities: string;
+    requirements: string;
+  };
 }
 
 export type ReportFieldStatus = "missing" | "weak" | "supported" | "contradicted";
@@ -142,6 +180,8 @@ export interface InterviewProgress {
 export interface InterviewState {
   sessionId: string;
   roleId: string;
+  role: InterviewRole;
+  intake: InterviewIntake;
   status: "draft" | "active" | "completed";
   currentAcknowledgement?: string;
   currentQuestion?: string;
@@ -187,8 +227,9 @@ const FIELD_KINDS = [
     id: "ownership",
     name: "Ownership",
     importance: 1,
-    competency: (project: Project) => project.mappedCompetencies.includes("software_engineering")
-      ? "software_engineering" : project.mappedCompetencies[0],
+    competency: (project: Project) => project.mappedCompetencies.find((id) =>
+      ["ownership_delivery", "software_engineering"].includes(id)
+    ) ?? project.mappedCompetencies[0],
     description: (project: Project) => `明确候选人在“${project.name}”中的个人边界、决策和交付。`,
   },
   {
@@ -236,10 +277,27 @@ export function createCandidateReport(candidate: CandidateProfile): CandidateRep
   };
 }
 
-export function createInterviewState(sessionId: string, roleId: string, candidate: CandidateProfile): InterviewState {
+export function createInterviewState(
+  sessionId: string,
+  role: string | InterviewRole,
+  candidate: CandidateProfile,
+  intake?: InterviewIntake,
+): InterviewState {
+  const resolvedRole = typeof role === "string" ? createLegacyInterviewRole(role, candidate) : role;
   return {
     sessionId,
-    roleId,
+    roleId: resolvedRole.id,
+    role: resolvedRole,
+    intake: intake ?? {
+      candidate: {
+        name: candidate.name,
+        skills: [...candidate.skills],
+        projects: candidate.projects.map((project) => ({
+          name: project.name,
+          description: project.description,
+        })),
+      },
+    },
     status: "draft",
     candidate,
     report: createCandidateReport(candidate),
@@ -247,6 +305,18 @@ export function createInterviewState(sessionId: string, roleId: string, candidat
     evidence: [],
     competencies: [],
     traces: [],
+  };
+}
+
+export function createLegacyInterviewRole(roleId: string, candidate: CandidateProfile): InterviewRole {
+  const competencyIds = [...new Set(candidate.projects.flatMap((project) => project.mappedCompetencies))];
+  return {
+    id: roleId,
+    name: roleId === "llm_application_engineer" ? "AI / LLM 应用工程师" : "通用候选人",
+    source: "legacy_role",
+    description: "由旧版 Session 兼容生成的岗位上下文。",
+    requirements: [],
+    competencies: competencyIds.map((id) => ({ id, name: id, weight: 1 / Math.max(1, competencyIds.length), core: true })),
   };
 }
 
@@ -598,6 +668,8 @@ export function setStepExecution(state: InterviewState, execution: StepExecution
   if (!trace) throw new Error("Interview has no decision trace");
   trace.execution = execution;
 }
+
+export { buildCandidateFromIntake, buildInterviewRole, normalizeInterviewIntake } from "./intake.ts";
 
 export function getDemoInterviewDecision(state: InterviewState): InterviewDecision {
   const openContradiction = state.report.contradictions.find((item) => item.status === "open");

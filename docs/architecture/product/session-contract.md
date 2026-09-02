@@ -6,14 +6,13 @@
 
 ```text
 GET  /api/health
-GET  /api/roles
 POST /api/interviews
 POST /api/interviews/:id/start
 POST /api/interviews/:id/answer
 GET  /api/interviews/:id/state
 ```
 
-State/Step 响应包含显式 Runtime、Candidate Report 进度、当前问题与 DecisionTrace。`coveragePercent` 由非 missing Report field 与有最低可信 Evidence 的核心 Competency 共同计算；轮数单独展示。
+`POST /api/interviews` 接收结构化 Candidate（姓名、技能、至少一个 Project）和可选结构化 Job（岗位、岗位介绍、职责、要求）。上传文件在浏览器回填后即丢弃，API 不接收文件或原始文档。State/Step 响应包含会话级 `InterviewIntake`、`InterviewRole`、显式 Runtime、Candidate Report 进度、当前问题与 DecisionTrace。`coveragePercent` 由非 missing Report field 与当前 Session Role 的核心 Competency 共同计算；轮数单独展示。
 
 ## Answer 事务
 
@@ -31,7 +30,7 @@ validate command
 
 ## SQLite
 
-`sessions` 保存完整 InterviewState；`answer_commands` 保存幂等键、原始 Answer、状态、响应和过期租约。成功 Answer 时两者在同一事务提交。
+`sessions` 保存完整 InterviewState，包括结构化 Candidate、结构化 Job 与会话级 Role；不保存上传文件、文件名或原始 Resume/JD 文本。`answer_commands` 保存幂等键、原始 Answer、状态、响应和过期租约。成功 Answer 时两者在同一事务提交。
 
 ## 安全边界
 

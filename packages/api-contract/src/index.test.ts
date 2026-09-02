@@ -5,11 +5,31 @@ import { createFixtureCandidate, createInterviewState, getInterviewProgress, sta
 import {
   AnswerCommandSchema,
   ApiErrorSchema,
+  CreateInterviewBodySchema,
   InterviewStateResponseSchema,
   InterviewStepResponseSchema,
 } from "./index.ts";
 
 test("HTTP command and error envelopes are executable contracts", () => {
+  assert.equal(Check(CreateInterviewBodySchema, {
+    candidate: {
+      name: "林青",
+      skills: ["Go", "PostgreSQL"],
+      projects: [{
+        name: "订单服务改造",
+        description: "作为核心开发重构交易链路，延迟降低 35%。",
+      }],
+    },
+    job: {
+      title: "支付平台工程师",
+      introduction: "负责支付平台核心系统。",
+      responsibilities: "设计高并发交易链路。",
+      requirements: "熟悉 Go。",
+    },
+  }), true);
+  assert.equal(Check(CreateInterviewBodySchema, {
+    candidate: { name: "无项目", skills: [], projects: [] },
+  }), false);
   assert.equal(Check(AnswerCommandSchema, {
     commandId: "command-1",
     questionId: "session:1",

@@ -5,6 +5,7 @@
 ## 当前可运行内容
 
 - React / Vite 多 Project Demo 面试与实时 Candidate Report、Evidence、DecisionTrace 面板
+- 姓名、技能、多项目经历表单；可选 Resume/JD 上传自动回填，原始文件不持久化
 - 原生 Node HTTP API、`node:sqlite` Session 持久化、进程恢复与 Answer 租约
 - 可执行 HTTP Schema、幂等 Answer Command、旧问题拒绝与 Provider 单次重试
 - `read_report → edit_report → ask_candidate / finish_interview` Agent 主链
@@ -69,6 +70,6 @@ apps/web                 React UI
 packages/interview-core  Candidate Report + Evidence + deterministic guardrails
 packages/pi-runtime      Interview Agent tools and model boundary
 packages/api-contract    HTTP request/response schemas
-roles                    role competency model
+roles                    legacy/evaluation role fixtures
 docs/architecture        architecture contracts
 ```

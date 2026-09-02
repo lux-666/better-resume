@@ -2,7 +2,7 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：Blocked — 等待 [Phase 1.5](../phase1.5/README.md) 完成**
+**状态：In Progress — 候选人 Intake 与会话级岗位解耦已实现**
 
 ## 业务目标
 
@@ -12,7 +12,39 @@
 
 Role、Resume 和 Report export 都是输入输出层。只有 Interview Agent 的行为通过 Phase 1，扩大输入范围才有产品价值。
 
+## 当前第一切片
+
+已建立真实 Session 创建入口：
+
+```text
+普通候选人填写
+  + optional Resume TXT / Markdown / text PDF
+  + optional Job Description TXT / Markdown / text PDF
+        ↓
+浏览器一次性解析并回填可编辑表单
+        ↓
+Candidate: 姓名 / 技能 / Project[]
+Job: 岗位 / 岗位介绍 / 职责 / 要求
+        ↓
+只提交结构化 InterviewIntake
+        ↓
+session-specific InterviewRole + CandidateProfile + initial Candidate Report
+```
+
+- 候选人普通填写只包含姓名、技能和项目经历；项目使用可增删的 `Project[]` UI，至少一个；
+- JD 作为整体可选；一旦填写，岗位、岗位介绍、职责、要求四块必须完整；
+- 上传后只用于自动回填这些表单字段，用户补充或修正后再创建 Session；
+- 文本型 PDF 在浏览器一次性提取；Server 不接收、不保存文件、文件名或原始 Resume/JD 文本，扫描 PDF/OCR 暂不支持；
+- 生产 Server 不再加载固定 `llm_engineer` Role；岗位名称、JD、要求和 Competency 属于当前 Session；
+- 每个表单项目直接生成独立 Candidate Project；用户只填项目名称和一段经历，不在 Session 创建时增加额外 LLM 分类；
+- 每段项目经历整体生成一条初始为 `unverified` 的 `candidate_input` Claim，不能直接成为 Evidence；
+- 旧 Session 在读取时迁移为兼容 Role/Intake，不因 schema 扩展失效。
+
+上传解析是便捷预填，不是权威 Parser：表单内容才是 Session 输入。复杂简历分段准确率和由 Role Pack 完整定义 Report field contract 尚未完成。
+
 ## Task 2.1：Role Pack 驱动 Report contract
+
+**状态：部分完成。** 固定全局岗位已移除，Role 已成为 Session 数据并进入 Interview Agent Context；Report 仍使用四个通用调查字段，尚未由 Role Pack 定义 required/optional field。
 
 **目标：** 不再由 Core 为每个 Project 硬编码四个 Report field，同时不恢复问题路由 Policy。
 
@@ -27,14 +59,16 @@ Role、Resume 和 Report export 都是输入输出层。只有 Interview Agent �
 
 ## Task 2.2：最小 Resume 输入与确认
 
+**状态：结构化输入与可编辑确认已完成；复杂文档解析待继续验证。**
+
 **目标：** 用真实 Resume 替换固定 Candidate Fixture，同时保留来源和用户纠错能力。
 
 **开发内容：**
 
-- 首版只支持粘贴文本和文本型 PDF；
-- 提取 Candidate、Project、技术、结果和 Resume Claim；
-- 每个 Claim 保存来源片段，初始状态均为 `unverified`；
-- 面试开始前允许用户确认或修正解析结果；
+- 首版支持普通填写、文本文件和文本型 PDF；
+- 上传后提取姓名、技能和一个或多个 Project，并回填可编辑表单；
+- 每段项目经历整体生成 Candidate Input Claim，保留逐字来源且初始状态为 `unverified`；
+- 面试开始前由用户直接确认或修正所有结构化字段；
 - OCR、复杂版式和简历编辑器不在本 Phase 范围。
 
 **验收：** 单 Project、多 Project、模糊归属三份固定简历可稳定解析；不存在无来源 Claim。

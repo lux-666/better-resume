@@ -11,6 +11,22 @@ article { min-height: 360px; padding: 2rem; background: #fbf9f3; }
 label { display: block; margin-bottom: .5rem; font-size: .85rem; }
 input, textarea { width: 100%; padding: .85rem 1rem; border: 1px solid #aaa99f; background: transparent; font: inherit; }
 textarea { resize: vertical; }
+.form-row { display: grid; grid-template-columns: 2fr 1fr; gap: .75rem; }
+fieldset { margin: 1rem 0; padding: 1rem; border: 1px solid #cfcbc0; }
+legend { padding: 0 .4rem; color: #56665b; font-size: .8rem; font-weight: 700; }
+input[type="file"] { margin-top: .5rem; padding: .65rem; font-size: .8rem; }
+.file-note { margin: .65rem 0 0; color: #56665b; font-size: .78rem; }
+.field-hint { margin: 0 0 .75rem; color: #56665b; font-size: .8rem; line-height: 1.5; }
+.success-note { padding: .7rem; background: #dcebdd; color: #205a3c; }
+.project-heading, .project-card-title { display: flex; align-items: center; justify-content: space-between; }
+.project-heading { margin: 1.25rem 0 .5rem; }
+.project-heading span { color: #56665b; font-size: .72rem; }
+.project-card { margin: 0 0 .8rem; padding: 1rem; border: 1px solid #ddd8cc; background: #f4f0e7; }
+.project-card label { margin-top: .75rem; }
+.add-button { margin: .25rem 0 0; border: 1px dashed #205a3c; background: transparent; color: #205a3c; }
+.add-button:hover { background: #e4eee7; }
+.text-button { display: inline; width: auto; margin: 0 0 0 .75rem; padding: 0; border: 0; background: transparent; color: #a32e1e; font-size: inherit; font-weight: 700; }
+.text-button:hover { background: transparent; text-decoration: underline; }
 button { width: 100%; margin: 1rem 0; padding: .9rem; border: 0; background: #205a3c; color: white; font: inherit; font-weight: 700; cursor: pointer; }
 button:hover { background: #163f2b; }
 button:disabled { cursor: not-allowed; opacity: .45; }
@@ -64,5 +80,6 @@ blockquote p { margin: .5rem 0 0; color: #56665b; }
 footer { padding-top: 3rem; color: #56665b; text-align: center; font-family: ui-monospace, monospace; }
 @media (max-width: 720px) {
   .grid { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
   .progress-grid { grid-template-columns: repeat(2, 1fr); }
 }

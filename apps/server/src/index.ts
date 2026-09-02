@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -9,6 +9,7 @@ import {
   CreateInterviewBodySchema,
   type AnswerCommand,
   type ApiError,
+  type CreateInterviewBody,
   type InterviewStateResponse,
   type InterviewStepResponse,
   type RuntimeInfo,
@@ -16,13 +17,16 @@ import {
 import {
   activateInterview,
   applyInterviewDecision,
-  createFixtureCandidate,
+  buildCandidateFromIntake,
+  buildInterviewRole,
+  createLegacyInterviewRole,
   createInterviewState,
   getDemoInterviewDecision,
   getInterviewProgress,
   HARD_MAX_TURNS,
   recordAnswer,
   setStepExecution,
+  normalizeInterviewIntake,
   type InterviewState,
   type InterviewStep,
   type StepExecutionTrace,
@@ -89,15 +93,6 @@ function ensureAnswerCommandColumn(name: string, definition: string): void {
 ensureAnswerCommandColumn("lease_owner", "lease_owner TEXT");
 ensureAnswerCommandColumn("lease_expires_at", "lease_expires_at INTEGER");
 
-type RolePack = {
-  id: string;
-  name: string;
-  competencies: Array<{ id: string; name: string; weight: number; core: boolean }>;
-};
-
-const role = JSON.parse(
-  readFileSync(resolve("roles/llm_engineer/role.json"), "utf8"),
-) as RolePack;
 const defaultRuntime = createModelRuntime();
 const agentModelIds = defaultRuntime.mode === "llm" ? resolveAgentModelIds() : undefined;
 const reportRuntime = agentModelIds
@@ -119,7 +114,6 @@ const runtimeInfo: RuntimeInfo = {
     interviewModelId: agentModelIds.interviewModelId,
   } : {}),
 };
-const coreCompetencyIds = role.competencies.filter((competency) => competency.core).map((competency) => competency.id);
 const commandLeaseOwner = randomUUID();
 // ponytail: a fixed lease avoids a heartbeat; raise this if provider calls can legitimately exceed it.
 const commandLeaseMs = Number(process.env.COMMAND_LEASE_MS ?? 120_000);
@@ -159,11 +153,27 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   return value as Record<string, unknown>;
 }
 
+function hydrateState(state: InterviewState): InterviewState {
+  if (!state.role) state.role = createLegacyInterviewRole(state.roleId, state.candidate);
+  state.intake = normalizeInterviewIntake({
+    candidate: {
+      name: state.intake?.candidate?.name ?? state.candidate.name,
+      skills: state.intake?.candidate?.skills ?? state.candidate.skills,
+      projects: state.candidate.projects.map((project, index) => ({
+        name: state.intake?.candidate?.projects?.[index]?.name ?? project.name,
+        description: state.intake?.candidate?.projects?.[index]?.description ?? project.description,
+      })),
+    },
+    ...(state.intake?.job ? { job: state.intake.job } : {}),
+  });
+  return state;
+}
+
 function loadState(id: string): InterviewState | undefined {
   const row = database.prepare("SELECT state FROM sessions WHERE id = ?").get(id) as
     | { state: string }
     | undefined;
-  return row ? (JSON.parse(row.state) as InterviewState) : undefined;
+  return row ? hydrateState(JSON.parse(row.state) as InterviewState) : undefined;
 }
 
 function saveState(state: InterviewState): void {
@@ -225,7 +235,10 @@ function stateResponse(state: InterviewState, includePendingCommand = true): Int
     state,
     stateVersion: stateVersion(state),
     runtime: runtimeInfo,
-    progress: getInterviewProgress(state, coreCompetencyIds),
+    progress: getInterviewProgress(
+      state,
+      state.role.competencies.filter((competency) => competency.core).map((competency) => competency.id),
+    ),
     questionId: questionId(state),
     pendingCommand: includePendingCommand ? pendingCommand(state) : undefined,
   };
@@ -271,10 +284,14 @@ function claimAnswerCommand(state: InterviewState, command: AnswerCommand): Inte
     }
     if (existing.status === "completed" && existing.response) {
       const replay = JSON.parse(existing.response) as InterviewStepResponse;
+      hydrateState(replay.state);
       return {
         ...replay,
         runtime: runtimeInfo,
-        progress: getInterviewProgress(replay.state, coreCompetencyIds),
+        progress: getInterviewProgress(
+          replay.state,
+          replay.state.role.competencies.filter((competency) => competency.core).map((competency) => competency.id),
+        ),
       };
     }
     assertCurrentCommand(state, command);
@@ -422,21 +439,17 @@ const server = createServer(async (request, response) => {
     if (method === "GET" && pathname === "/api/health") {
       return json(response, 200, { ok: true, runtime: runtimeInfo });
     }
-    if (method === "GET" && pathname === "/api/roles") {
-      return json(response, 200, [role]);
-    }
     if (method === "POST" && pathname === "/api/interviews") {
       const body = await readJson(request);
       if (!Check(CreateInterviewBodySchema, body)) {
         throw new HttpError(400, "INVALID_REQUEST", "Create interview body is invalid");
       }
-      const candidateName = body.candidateName;
-
+      const input = body as CreateInterviewBody;
+      const intake = normalizeInterviewIntake(input);
+      const role = buildInterviewRole({ job: intake.job });
       const id = randomUUID();
-      const candidate = createFixtureCandidate(
-        typeof candidateName === "string" && candidateName.trim() ? candidateName.trim() : "匿名候选人",
-      );
-      const state = createInterviewState(id, "llm_application_engineer", candidate);
+      const candidate = buildCandidateFromIntake(intake, role);
+      const state = createInterviewState(id, role, candidate, intake);
       const now = new Date().toISOString();
       database
         .prepare("INSERT INTO sessions (id, state, created_at, updated_at) VALUES (?, ?, ?, ?)")

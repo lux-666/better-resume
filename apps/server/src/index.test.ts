@@ -76,12 +76,52 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     const response = await fetch(`http://127.0.0.1:${port}${path}`);
     return { response, body: await response.json() as Record<string, any> };
   };
-  const created = await post("/api/interviews", { candidateName: "Contract" });
+  const created = await post("/api/interviews", {
+    candidate: {
+      name: "Contract",
+      skills: [],
+      projects: [{
+        name: "通用项目",
+        description: "负责项目设计、实现和上线。",
+      }],
+    },
+  });
   assert.equal(created.response.status, 201);
   assert.equal(created.body.stateVersion, 0);
   assert.deepEqual(created.body.runtime, { mode: "demo" });
   assert.equal(created.body.progress.coveragePercent, 0);
   const sessionId = created.body.state.sessionId as string;
+
+  const custom = await post("/api/interviews", {
+    candidate: {
+      name: "林青",
+      skills: ["Go", "PostgreSQL"],
+      projects: [
+        {
+          name: "订单服务改造",
+          description: "作为核心开发负责交易系统开发和上线，延迟降低 35%。",
+        },
+        {
+          name: "风控平台",
+          description: "建设实时规则引擎。",
+        },
+      ],
+    },
+    job: {
+      title: "支付平台工程师",
+      introduction: "负责支付平台核心系统。",
+      responsibilities: "设计高并发支付系统。",
+      requirements: "熟悉 Go。",
+    },
+  });
+  assert.equal(custom.response.status, 201);
+  assert.equal(custom.body.state.role.name, "支付平台工程师");
+  assert.equal(custom.body.state.role.source, "job_description");
+  assert.equal(custom.body.state.candidate.name, "林青");
+  assert.equal(custom.body.state.candidate.projects.length, 2);
+  assert.deepEqual(Object.keys(custom.body.state.intake.candidate.projects[0]).sort(), ["description", "name"]);
+  assert.equal("resume" in custom.body.state.intake, false);
+  assert.equal(JSON.stringify(custom.body).includes("project_enterprise_rag"), false);
 
   const started = await post(`/api/interviews/${sessionId}/start`, {});
   assert.equal(started.body.stateVersion, 1);
@@ -172,7 +212,7 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     current = next.body;
   }
   assert.equal(current.state.status, "completed");
-  assert.ok(current.state.turns.length >= 8 && current.state.turns.length <= 15);
+  assert.ok(current.state.turns.length >= 4 && current.state.turns.length <= 15);
   assert.equal(new Set(current.state.turns.map((turn: { question: string }) => turn.question)).size,
     current.state.turns.length);
   assert.equal(current.state.report.status, "complete");

@@ -2,9 +2,12 @@
   "name": "@better-resume/web",
   "private": true,
   "type": "module",
-  "scripts": { "build": "vite build" },
+  "scripts": {
+    "build": "vite build"
+  },
   "dependencies": {
     "@better-resume/api-contract": "*",
+    "pdfjs-dist": "^6.3.289",
     "react": "latest",
     "react-dom": "latest"
   }
