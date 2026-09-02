@@ -49,7 +49,7 @@ export function buildInterviewRole(options: { job?: InterviewIntake["job"] }): I
     requirements: requirementLines(options.job?.requirements),
     competencies: [
       { id: "ownership_delivery", name: "职责边界与交付", weight: 0.3, core: true },
-      { id: "role_capability", name: `${title}核心能力`, weight: 0.3, core: true },
+      { id: "role_capability", name: hasJob ? `${title}核心能力` : "项目相关能力", weight: 0.3, core: true },
       { id: "evaluation", name: "结果与验证", weight: 0.2, core: true },
       { id: "problem_solving", name: "问题解决", weight: 0.2, core: true },
     ],

@@ -14,7 +14,7 @@
 - Web 支持 TXT、Markdown、JSON、CSV 和文本型 PDF；文件只在浏览器内一次性解析并回填表单，扫描版不做 OCR；
 - Server 不接收文件、文件名或原始 Resume/JD 文本；
 - 每段项目经历整体生成一条 `candidate_input` Claim，保存该段原文作为 `sourceQuote`，初始为 `unverified`，不能作为 Evidence 或能力结论；
-- Core 仍为每个 Project 初始化 Ownership、Mechanism、Measurement、Failure 四个通用 Report field；
+- Core 为每个 Project 初始化个人贡献、方法与决策、结果与验证、问题解决四个跨岗位通用 Report field；
 - 面试前人工确认/修正已实现；复杂版式下的多 Project 自动分段尚未建立准确率基线。
 
 ## 目标转换

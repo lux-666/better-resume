@@ -4,6 +4,7 @@ import {
   buildCandidateFromIntake,
   buildInterviewRole,
   createInterviewState,
+  getDemoInterviewDecision,
   normalizeInterviewIntake,
   type InterviewIntake,
 } from "./index.ts";
@@ -24,6 +25,7 @@ test("candidate intake requires and preserves structured projects", () => {
   const state = createInterviewState("session", role, candidate, intake);
 
   assert.equal(role.id, "general_candidate");
+  assert.equal(role.competencies.find((item) => item.id === "role_capability")?.name, "项目相关能力");
   assert.equal(candidate.projects.length, 1);
   assert.equal(candidate.projects[0].name, "用户增长实验");
   assert.deepEqual(candidate.projects[0].technologies, []);
@@ -34,6 +36,14 @@ test("candidate intake requires and preserves structured projects", () => {
   ]);
   assert.equal(state.intake.candidate.projects.length, 1);
   assert.equal(state.report.fields.length, 4);
+  const mechanism = state.report.fields.find((field) => field.id.endsWith(":mechanism"))!;
+  assert.equal(mechanism.name, "Approach and reasoning");
+  assert.equal(mechanism.competencyId, "role_capability");
+  state.report.fields.find((field) => field.id.endsWith(":ownership"))!.status = "supported";
+  const decision = getDemoInterviewDecision(state);
+  assert.equal(decision.action, "ASK_CANDIDATE");
+  assert.match(decision.question ?? "", /用户增长实验/);
+  assert.doesNotMatch(decision.question ?? "", /技术机制|架构|测试集|真实失败/);
   assert.throws(() => normalizeInterviewIntake({
     candidate: { name: "缺少项目", skills: [], projects: [] },
   }), /At least one candidate project/);

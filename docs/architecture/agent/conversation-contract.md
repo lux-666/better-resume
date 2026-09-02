@@ -19,12 +19,20 @@ answer:
 
 工具职责：
 
-- `read_report`：工具名保持不变，但视图按 consumer 切分。Report Agent 只读取当前 Project 的 Claim、Report field、grounded Evidence 和相关矛盾；Interview Agent 读取全局轻量字段索引和当前焦点 Project 细节，不包含全量 Evidence 历史和 `sourceQuote`。
+- `read_report`：工具名保持不变，但视图按 consumer 切分。两个视图都包含当前 Session 的 Role 来源；Report Agent 只读取当前 Project 的描述、Claim、Report field、grounded Evidence 和相关矛盾；Interview Agent 额外读取候选人技能、全局轻量字段索引和当前焦点 Project 描述，不包含姓名、全量 Evidence 历史和 `sourceQuote`。旧 Project 上的角色、技术和成果字段不进入两个 Agent 投影。
 - `edit_report`：提交本轮 Answer 的结构化 Evidence edit；模型不能直接改 State。
 - `ask_candidate`：选择一个 Report field，并提交一个候选人可见问题。
 - `finish_interview`：请求结束；Completion Validator 可返回 blockers，Agent 随后必须继续调查。
 
-LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体技术点是否值得继续纵向深入，是 Agent 基于轻量调查索引、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。Project 是一级切片边界，Report field 是项目内的焦点；不额外复制一份 Lead/Probe 状态。
+LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体方法、决策或约束是否值得继续纵向深入，是 Agent 基于轻量调查索引、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。Project 是一级切片边界，Report field 是项目内的焦点；不额外复制一份 Lead/Probe 状态。
+
+## 当前输入边界
+
+- 问题只能依据当前 Session 的 Role、JD、候选人技能、项目经历和已产生 Answer；
+- `role.source = generic` 时不得假设存在未提交的 Job Description；
+- 不得补入默认岗位、职级、雇主、教育经历或技术栈；
+- 候选人资料与 Candidate Input Claim 只是调查线索，不能直接作为 Evidence；
+- 测试用企业 RAG、客服 Agent 与 `llm_application_engineer` Fixture 不进入生产 Server。
 
 ## Report edit
 
@@ -56,7 +64,7 @@ LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体�
 
 ## 调查决策
 
-`ask_candidate` 同时包含 `targetFieldId`、`reason`、可选中性 acknowledgement 和 question。Agent 可以调查 missing/weak field、澄清矛盾，也可以沿上一轮新出现的机制、决策、代价、失败或测量继续深挖，即使目标字段已得到初步支持。
+`ask_candidate` 同时包含 `targetFieldId`、`reason`、可选中性 acknowledgement 和 question。Agent 可以调查 missing/weak field、澄清矛盾，也可以沿上一轮新出现的方法、决策、约束、问题或结果继续深挖，即使目标字段已得到初步支持。每个 question 只能索取一个事实、决策、原因、方法或结果，不得把职责、决策、交付、指标和原因拼成一个复合问题。
 
 `finish_interview` 不具有最终决定权。Core 检查重要字段、每个核心 Project 的 Evidence、未解决矛盾、Evidence grounding 和硬上限。
 

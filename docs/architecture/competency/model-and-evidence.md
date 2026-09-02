@@ -17,7 +17,7 @@ InterviewState
 └── DecisionTrace[]
 ```
 
-Candidate Report 是 Agent 的工作区。当前每个 Candidate Project 初始化四个通用报告字段：Ownership、Architecture and mechanism、Measurement、Failure analysis。字段状态为 `missing | weak | supported | contradicted`，并只通过 Evidence 更新。
+Candidate Report 是 Agent 的工作区。当前每个 Candidate Project 初始化四个跨岗位通用报告字段：Contribution and ownership、Approach and reasoning、Results and validation、Problem solving。字段 ID 继续使用 `ownership / mechanism / measurement / failure` 以兼容已有 Session。字段状态为 `missing | weak | supported | contradicted`，并只通过 Evidence 更新。
 
 ## Evidence
 

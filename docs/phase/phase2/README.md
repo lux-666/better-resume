@@ -38,6 +38,7 @@ session-specific InterviewRole + CandidateProfile + initial Candidate Report
 - 生产 Server 不再加载固定 `llm_engineer` Role；岗位名称、JD、要求和 Competency 属于当前 Session；
 - 每个表单项目直接生成独立 Candidate Project；用户只填项目名称和一段经历，不在 Session 创建时增加额外 LLM 分类；
 - 每段项目经历整体生成一条初始为 `unverified` 的 `candidate_input` Claim，不能直接成为 Evidence；
+- Agent Context 只读取当前 Session 的 Candidate、Project 与 Role；问题使用跨岗位的个人贡献、方法与决策、结果与验证、问题解决语义，不再默认工程师岗位或技术栈；
 - 旧 Session 在读取时迁移为兼容 Role/Intake，不因 schema 扩展失效。
 
 上传解析是便捷预填，不是权威 Parser：表单内容才是 Session 输入。复杂简历分段准确率和由 Role Pack 完整定义 Report field contract 尚未完成。

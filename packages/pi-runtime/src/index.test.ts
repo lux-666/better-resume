@@ -9,8 +9,11 @@ import {
 import {
   activateInterview,
   applyInterviewDecision,
+  buildCandidateFromIntake,
+  buildInterviewRole,
   createFixtureCandidate,
   createInterviewState,
+  normalizeInterviewIntake,
   recordAnswer,
   startInterview,
 } from "../../interview-core/src/index.ts";
@@ -104,6 +107,35 @@ test("Interview Agent view uses a compact portfolio index without evidence quote
   assert.deepEqual(view.projectIndex.map(({ id }) => id), ["project_enterprise_rag", "project_service_agent"]);
   assert.doesNotMatch(serialized, /sourceQuote/);
   assert.doesNotMatch(serialized, /我独立实现了召回模块/);
+});
+
+test("production Agent views use only the current candidate and job context", () => {
+  const intake = normalizeInterviewIntake({
+    candidate: {
+      name: "周遥",
+      skills: ["用户研究", "活动策划"],
+      projects: [{ name: "社区增长活动", description: "我负责访谈用户并设计活动流程。" }],
+    },
+    job: {
+      title: "用户运营",
+      introduction: "负责社区用户增长。",
+      responsibilities: "策划活动并分析用户反馈。",
+      requirements: "具备用户研究和活动执行经验。",
+    },
+  });
+  const role = buildInterviewRole({ job: intake.job });
+  const state = createInterviewState("current-context", role, buildCandidateFromIntake(intake, role), intake);
+  startInterview(state);
+  const serialized = JSON.stringify({
+    report: buildReportAgentView(state),
+    interview: buildInterviewAgentView(state),
+  });
+
+  assert.match(serialized, /用户研究/);
+  assert.match(serialized, /用户运营/);
+  assert.match(serialized, /社区增长活动/);
+  assert.doesNotMatch(serialized, /周遥/);
+  assert.doesNotMatch(serialized, /企业 RAG|客服 Agent|AI \/ LLM 应用工程师/);
 });
 
 test("Report Agent reads before submitting a grounded edit", async () => {
@@ -286,6 +318,7 @@ test("question guard rejects fake warmth and multiple questions", () => {
   for (const value of [
     { acknowledgement: "很好，这证明你很优秀。", question: "接下来做了什么？" },
     { question: "你负责什么？效果如何？" },
+    { question: "你的负责范围是什么、做了哪些关键决定，以及最终交付了什么？" },
     { question: "为了提高评分，你能补充证据缺口吗？" },
   ]) assert.throws(() => validateQuestionGeneration(value));
 });

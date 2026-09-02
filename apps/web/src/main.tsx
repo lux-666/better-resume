@@ -314,7 +314,7 @@ function App() {
       <header>
         <p className="eyebrow">EVIDENCE-DRIVEN INTERVIEW</p>
         <h1>Better Resume</h1>
-        <p>从简历 Claim 出发，用可追溯证据判断真实岗位能力。</p>
+        <p>从当前候选人的项目经历出发，用可追溯证据判断岗位匹配。</p>
         {runtime && <p className={`runtime ${runtime.mode}`}>
           <strong>{runtime.mode === "llm" ? "LLM 已连接" : "Demo 模式"}</strong>
           {runtime.mode === "llm" && (runtime.reportModelId || runtime.interviewModelId

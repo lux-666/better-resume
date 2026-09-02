@@ -225,7 +225,7 @@ export const HARD_MAX_TURNS = 15;
 const FIELD_KINDS = [
   {
     id: "ownership",
-    name: "Ownership",
+    name: "Contribution and ownership",
     importance: 1,
     competency: (project: Project) => project.mappedCompetencies.find((id) =>
       ["ownership_delivery", "software_engineering"].includes(id)
@@ -234,28 +234,30 @@ const FIELD_KINDS = [
   },
   {
     id: "mechanism",
-    name: "Architecture and mechanism",
+    name: "Approach and reasoning",
     importance: 0.9,
     competency: (project: Project) => project.mappedCompetencies.find((id) =>
-      !["software_engineering", "evaluation", "problem_solving"].includes(id)
+      id === "role_capability"
+    ) ?? project.mappedCompetencies.find((id) =>
+      !["ownership_delivery", "software_engineering", "evaluation", "problem_solving"].includes(id)
     ) ?? project.mappedCompetencies[0],
-    description: (project: Project) => `说明“${project.name}”的关键机制、设计选择和代价。`,
+    description: (project: Project) => `说明“${project.name}”采用的关键方法或流程、选择依据和取舍。`,
   },
   {
     id: "measurement",
-    name: "Measurement",
+    name: "Results and validation",
     importance: 0.9,
     competency: (project: Project) => project.mappedCompetencies.includes("evaluation")
       ? "evaluation" : project.mappedCompetencies[0],
-    description: (project: Project) => `给出“${project.name}”的指标定义、基线、数据和验证结果。`,
+    description: (project: Project) => `说明“${project.name}”如何判断结果、使用了哪些数据或反馈，以及结论如何验证。`,
   },
   {
     id: "failure",
-    name: "Failure analysis",
+    name: "Problem solving",
     importance: 0.8,
     competency: (project: Project) => project.mappedCompetencies.includes("problem_solving")
       ? "problem_solving" : project.mappedCompetencies[0],
-    description: (project: Project) => `重建“${project.name}”的一次失败、诊断、根因和修复验证。`,
+    description: (project: Project) => `重建“${project.name}”中的一次问题或偏差、判断过程、处理方式和结果确认。`,
   },
 ] as const;
 
@@ -615,6 +617,10 @@ export function validateCandidateQuestion(question: string, acknowledgement?: st
   if (marks !== 1 || !/[?？]$/.test(question)) {
     throw new Error("Question output must contain exactly one final question mark");
   }
+  const requestedFacts = question.match(/为什么|如何|怎么|哪些|什么|多少|是否|哪(?:个|些|项|种|一)/g) ?? [];
+  if (requestedFacts.length > 1 || /以及|并且|分别/.test(question)) {
+    throw new Error("Question output must request exactly one fact");
+  }
   const output = `${acknowledgement ?? ""}\n${question}`;
   if (/rubric|policy|target.?gap|probe|评分|得分|证据缺口|能力模型/i.test(output)) {
     throw new Error("Question output reveals internal evaluation context");
@@ -713,10 +719,10 @@ function normalizeQuestion(value: string): string {
 function demoQuestion(state: InterviewState, field: ReportField, contradiction: boolean): string {
   const project = state.candidate.projects.find((item) => item.id === field.projectId)!;
   if (contradiction) return `关于“${project.name}”的个人贡献，前后信息不一致，准确情况是什么？`;
-  if (field.id.endsWith(":ownership")) return `在“${project.name}”中，你本人具体负责了哪些设计和实现？`;
-  if (field.id.endsWith(":mechanism")) return `“${project.name}”最关键的技术机制具体是怎么工作的？`;
-  if (field.id.endsWith(":measurement")) return `“${project.name}”的效果指标如何定义，基线和测试集分别是什么？`;
-  return `请讲一次“${project.name}”中的真实失败，你如何定位根因并验证修复？`;
+  if (field.id.endsWith(":ownership")) return `在“${project.name}”中，你本人具体负责的关键工作是什么？`;
+  if (field.id.endsWith(":mechanism")) return `“${project.name}”采用的关键方法或流程是什么？`;
+  if (field.id.endsWith(":measurement")) return `你判断“${project.name}”结果达成的主要依据是什么？`;
+  return `“${project.name}”中最需要你处理的一次问题或偏差是什么？`;
 }
 
 // ponytail: deterministic demo extraction proves the report flow; configured LLM mode supplies grounded edits.
