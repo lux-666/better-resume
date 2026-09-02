@@ -5,6 +5,7 @@ import {
 } from "../../../packages/interview-core/src/index.ts";
 import { fixedProfileResponse, type ModelProfileName } from "../../../packages/interview-core/src/fixed-profiles.ts";
 import { evaluateProfileRun, type EvaluationTurn } from "./evaluation-gates.ts";
+import { buildEvaluationScorecard, renderEvaluationScorecard } from "./evaluation-scorecard.ts";
 
 function completedRun(): { state: InterviewState; turns: EvaluationTurn[] } {
   const state = createInterviewState("gate", "role", createFixtureCandidate("gate"));
@@ -24,6 +25,10 @@ function completedRun(): { state: InterviewState; turns: EvaluationTurn[] } {
       answer: turn.answer,
       edit: { answerDisposition: response.disposition, evidence: response.evidence },
       rejectedFinishes: [],
+      expectedDisposition: response.disposition,
+      expectedEvidence: response.evidence.map((item) => ({
+        ...item, reportFieldIds: [...item.reportFieldIds], claimIds: [...item.claimIds],
+      })),
     });
     assert.equal(step.state, state);
   }
@@ -36,6 +41,28 @@ const codes = (profile: ModelProfileName, state: InterviewState, turns: Evaluati
 test("a grounded completed run passes the common behavior gates", () => {
   const { state, turns } = completedRun();
   assert.deepEqual(evaluateProfileRun("strong", state, turns), []);
+});
+
+test("scorecard reports deterministic quality metrics and unavailable token fields", () => {
+  const { state, turns } = completedRun();
+  const scorecard = buildEvaluationScorecard({ profile: "strong", state, turns, failures: [], telemetry: [] });
+  assert.equal(scorecard.questionQuality.singleFocus.rate, 1);
+  assert.equal(scorecard.questionQuality.duplicateRate.rate, 0);
+  assert.equal(scorecard.evidenceExtraction.reportFields.precision.rate, 1);
+  assert.equal(scorecard.evidenceExtraction.reportFields.recall.rate, 1);
+  assert.equal(scorecard.evidenceExtraction.answerDisposition.rate, 1);
+  assert.equal(scorecard.completion.requiredCoverage.rate, 1);
+  assert.equal(scorecard.telemetry.cachedReadTokens, null);
+  assert.match(renderEvaluationScorecard(scorecard), /Required coverage: 100%/);
+
+  const secondIndex = turns.findIndex((turn) =>
+    turn.expectedEvidence?.[0]?.reportFieldIds[0] !== turns[0].expectedEvidence?.[0]?.reportFieldIds[0]);
+  assert.ok(secondIndex > 0);
+  const first = turns[0].edit.evidence[0].reportFieldIds;
+  turns[0].edit.evidence[0].reportFieldIds = turns[secondIndex].edit.evidence[0].reportFieldIds;
+  turns[secondIndex].edit.evidence[0].reportFieldIds = first;
+  const wrongTurn = buildEvaluationScorecard({ profile: "strong", state, turns, failures: [], telemetry: [] });
+  assert.ok((wrongTurn.evidenceExtraction.reportFields.precision.rate ?? 1) < 1);
 });
 
 test("critical gates reject grounding, references, completion, and turn-limit violations", () => {

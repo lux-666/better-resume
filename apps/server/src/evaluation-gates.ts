@@ -1,6 +1,7 @@
 import type { InterviewState } from "../../../packages/interview-core/src/index.ts";
 import { modelProfiles, type ModelProfileName } from "../../../packages/interview-core/src/fixed-profiles.ts";
 import type { ReportEdit } from "../../../packages/pi-runtime/src/index.ts";
+import type { AnswerDisposition, EvidenceProposal } from "../../../packages/interview-core/src/index.ts";
 
 export type GateSeverity = "critical" | "major";
 
@@ -13,6 +14,8 @@ export interface EvaluationTurn {
   answer: string;
   edit: ReportEdit;
   rejectedFinishes: string[][];
+  expectedDisposition?: AnswerDisposition;
+  expectedEvidence?: EvidenceProposal[];
 }
 
 export interface GateFailure {

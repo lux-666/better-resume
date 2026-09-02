@@ -16,6 +16,8 @@ import {
   editReportWithAgent,
   EvidenceValidationError,
   ModelProviderError,
+  TelemetryCollector,
+  type TelemetryTrace,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
 import {
@@ -24,6 +26,7 @@ import {
   type EvaluationTurn,
 } from "./evaluation-gates.ts";
 import { createModelRuntime } from "./model-runtime.ts";
+import { buildEvaluationScorecard, renderEvaluationScorecard } from "./evaluation-scorecard.ts";
 
 const requested = process.argv[2] ?? "all";
 if (requested === "--help") {
@@ -63,12 +66,14 @@ async function askOrFinish(
   state: InterviewState,
   turnId: string | undefined,
   onRetry: () => void,
+  telemetry: TelemetryCollector,
 ): Promise<string[][]> {
   const rejected: string[][] = [];
   const decision = await withOneProviderRetry(() => decideNextStepWithAgent({
     model: configuredModel,
     streamFn: configuredStreamFn,
     state,
+    telemetry,
     onFinishRejected: (blockers) => rejected.push([...blockers]),
   }), onRetry);
   applyInterviewDecision(state, decision, turnId);
@@ -82,16 +87,22 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     createFixtureCandidate(profile),
   );
   const turns: EvaluationTurn[] = [];
+  const telemetry: TelemetryTrace[] = [];
   let stage: EvaluationStage = "initial_decision";
   let answer: string | undefined;
   let stageRetryCount = 0;
   try {
     activateInterview(state);
     let pendingRetryCount = 0;
-    let pendingRejectedFinishes = await askOrFinish(state, undefined, () => { pendingRetryCount += 1; });
+    const initialTelemetry = new TelemetryCollector({ sessionId: state.sessionId });
+    let pendingRejectedFinishes = await askOrFinish(
+      state, undefined, () => { pendingRetryCount += 1; }, initialTelemetry,
+    );
+    telemetry.push(initialTelemetry.trace);
     while (state.status === "active") {
       const trace = state.traces.at(-1)!;
       const response = fixedProfileResponse(profile, state);
+      const turnTelemetry = new TelemetryCollector({ sessionId: state.sessionId });
       answer = response.answer;
       stage = "report_edit";
       stageRetryCount = 0;
@@ -100,8 +111,11 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
         streamFn: configuredStreamFn,
         state,
         answer: response.answer,
+        telemetry: turnTelemetry,
       }), () => { stageRetryCount += 1; });
       const record = recordAnswer(state, response.answer, edit.evidence, edit.answerDisposition);
+      turnTelemetry.trace.turnId = record.turn.id;
+      for (const span of turnTelemetry.trace.spans) span.turnId ??= record.turn.id;
       const editRetryCount = stageRetryCount;
       stage = "next_decision";
       stageRetryCount = 0;
@@ -109,7 +123,9 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
         state,
         record.turn.id,
         () => { stageRetryCount += 1; },
+        turnTelemetry,
       );
+      telemetry.push(turnTelemetry.trace);
       turns.push({
         index: record.turn.index,
         retryCount: pendingRetryCount + editRetryCount + stageRetryCount,
@@ -119,6 +135,8 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
         answer: record.turn.answer,
         edit,
         rejectedFinishes: [...pendingRejectedFinishes, ...rejectedFinishes],
+        expectedDisposition: response.disposition,
+        expectedEvidence: response.evidence,
       });
       pendingRejectedFinishes = [];
       pendingRetryCount = 0;
@@ -138,6 +156,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
 
   stage = "behavior_gate";
   const failures = evaluateProfileRun(profile, state, turns);
+  const scorecard = buildEvaluationScorecard({ profile, state, turns, failures, telemetry });
   console.log(JSON.stringify({
     type: "profile_result",
     status: failures.length === 0 ? "passed" : "failed",
@@ -154,6 +173,9 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     })),
     report: state.report.fields.map(({ id, status, evidenceIds }) => ({ id, status, evidenceIds })),
     contradictions: state.report.contradictions,
+    scorecard,
+    scorecardMarkdown: renderEvaluationScorecard(scorecard),
+    telemetry,
     failures: failures.map((failure) => ({
       ...failure,
       transcript: minimalFailureTranscript(turns, failure),
