@@ -3,6 +3,7 @@ import {
   type AnswerDisposition,
   type EvidenceProposal,
   type InterviewState,
+  type ReportField,
 } from "./index.ts";
 
 export type FixedProfileName = "strong" | "weak" | "contradictory";
@@ -34,6 +35,41 @@ const strongAnswers: Record<string, string> = {
   "project_service_agent:failure": "支付查询工具曾因超时重试造成重复调用；我用 traceId 定位到缺少幂等保护，加入请求幂等键后用 100 条故障注入回归验证，并增加重复调用告警。",
 };
 
+type FieldKind = "ownership" | "mechanism" | "measurement" | "failure";
+
+function fieldKind(field: ReportField): FieldKind {
+  return field.id.split(":").at(-1) as FieldKind;
+}
+
+function uniqueKinds(kinds: readonly FieldKind[]): FieldKind[] {
+  return [...new Set(kinds)];
+}
+
+function matchedClaimIds(options: {
+  profile: ModelProfileName;
+  project: InterviewState["candidate"]["projects"][number];
+  field: ReportField;
+  coveredField: ReportField;
+  answer: string;
+  contradictionClaimId?: string;
+}): string[] {
+  const { profile, project, field, coveredField, answer, contradictionClaimId } = options;
+  if (contradictionClaimId && fieldKind(coveredField) === "ownership") return [contradictionClaimId];
+  if (fieldKind(coveredField) === "ownership") {
+    if (!/(独立设计并实现|主导|核心设计并不是我完成|只按既定方案完成局部配置|只负责接口联调|我负责召回|我负责工作流设计|我独立负责)/.test(answer)) return [];
+    return project.claims.filter((claim) => /负责|主导|设计|实现/.test(claim.text)).map((claim) => claim.id);
+  }
+  if (fieldKind(coveredField) !== "measurement") return [];
+  if (profile === "weak" && fieldKind(field) === "measurement") {
+    return project.claims.filter((claim) => /%|准确率|延迟|提升|降低/.test(claim.text)).map((claim) => claim.id);
+  }
+  return project.claims.filter((claim) => {
+    const claimedPercent = claim.text.match(/(\d+)%/);
+    return claimedPercent !== null
+      && new RegExp(`${claimedPercent[1]}(?:%|\\s*个百分点)`).test(answer);
+  }).map((claim) => claim.id);
+}
+
 export function fixedProfileResponse(
   profile: ModelProfileName,
   state: InterviewState,
@@ -44,15 +80,10 @@ export function fixedProfileResponse(
   const contradiction = state.report.contradictions.find((item) =>
     item.projectId === project.id && item.status === "open"
   );
-  const claimIds = contradiction ? [contradiction.claimId] : project.claims.filter((claim) =>
-    field.id.endsWith(":ownership") ? /负责|主导|设计|实现/.test(claim.text)
-      : field.id.endsWith(":measurement") ? /%|准确率|延迟|提升|降低/.test(claim.text)
-        : false
-  ).map((claim) => claim.id);
-
   let answer: string;
   let disposition: AnswerDisposition = "substantive";
   let polarity: EvidenceProposal["polarity"] = "support";
+  let coveredKinds: FieldKind[] = [fieldKind(field)];
   if (profile === "multi_field") {
     answer = project.id === "project_enterprise_rag"
       ? "我负责召回架构，用 BM25 和 dense 各取 50 条后通过 RRF 融合；固定测试集上的 Recall@20 提升 8%，一次排序异常也由我通过日志定位并补了回归。"
@@ -62,8 +93,7 @@ export function fixedProfileResponse(
       disposition,
       evidence: projectFields.filter((item) => item.status === "missing").map((item) => ({
         reportFieldIds: [item.id],
-        claimIds: item.id.endsWith(":ownership") ? [project.claims[0].id]
-          : item.id.endsWith(":measurement") ? [project.claims[1].id] : [],
+        claimIds: matchedClaimIds({ profile, project, field, coveredField: item, answer }),
         competencyId: item.competencyId,
         statement: `multi_field profile 对 ${item.name} 提供了可追溯回答。`,
         polarity: "support",
@@ -83,21 +113,26 @@ export function fixedProfileResponse(
     polarity = "weakness";
   } else if (profile === "vertical_depth" && project.id === "project_enterprise_rag" && projectTurns.length === 0) {
     answer = "我负责召回模块，最初只用 dense retrieval，后来针对短查询加入 BM25，形成 hybrid search。";
+    coveredKinds = ["ownership", "mechanism"];
   } else if (profile === "vertical_depth" && project.id === "project_enterprise_rag"
     && projectTurns.some((turn) => /hybrid search/i.test(turn.answer))
     && !projectTurns.some((turn) => /RRF/.test(turn.answer))) {
     answer = "BM25 和 embedding 各召回 50 条，再通过 RRF 融合，避免直接校准两类 score。";
+    coveredKinds = ["mechanism"];
   } else if (profile === "vertical_depth" && project.id === "project_enterprise_rag"
     && projectTurns.some((turn) => /RRF/.test(turn.answer))
     && !projectTurns.some((turn) => /top-50/.test(turn.answer))) {
     answer = "top-50 是离线比较 20、50、100 后选的，50 的 Recall@20 已接近 100，但延迟低了 18ms。";
+    coveredKinds = ["mechanism", "measurement"];
   } else if (contradiction) {
     answer = `准确说法是：我在“${project.name}”中只负责接口联调，没有主导整体设计。`;
     polarity = "weakness";
+    coveredKinds = ["ownership"];
   } else if (profile === "contradictory" && field.id.endsWith(":ownership")) {
     answer = `简历表述不准确，“${project.name}”的核心设计并不是我完成的。`;
     disposition = "denial";
     polarity = "invalidate";
+    coveredKinds = ["ownership"];
   } else if (profile === "weak") {
     polarity = "weakness";
     answer = field.id.endsWith(":ownership")
@@ -107,8 +142,10 @@ export function fixedProfileResponse(
         : field.id.endsWith(":measurement")
           ? `我只看了总体趋势，没有保留基线、固定测试集或统计口径。`
           : `问题由同事定位，我只协助复现，没有独立完成根因分析。`;
+    if (field.id.endsWith(":failure")) coveredKinds = ["ownership", "failure"];
   } else if (profile === "strong") {
     answer = strongAnswers[field.id];
+    if (field.id.endsWith(":failure")) coveredKinds = ["mechanism", "measurement", "failure"];
   } else {
     answer = field.id.endsWith(":ownership")
       ? `我独立负责“${project.name}”的核心设计、实现和上线验证，并记录了关键决策。`
@@ -122,16 +159,26 @@ export function fixedProfileResponse(
   return {
     answer,
     disposition,
-    evidence: [{
-      reportFieldIds: [field.id],
-      claimIds,
-      competencyId: field.competencyId,
-      statement: `${profile} profile 对 ${field.name} 提供了可追溯回答。`,
-      polarity,
-      strength: profile === "strong" ? 0.9 : 0.45,
-      specificity: 0.9,
-      evaluatorConfidence: 0.9,
-      sourceQuote: answer,
-    }],
+    evidence: uniqueKinds(coveredKinds).map((kind) => {
+      const coveredField = projectFields.find((item) => fieldKind(item) === kind)!;
+      return {
+        reportFieldIds: [coveredField.id],
+        claimIds: matchedClaimIds({
+          profile,
+          project,
+          field,
+          coveredField,
+          answer,
+          contradictionClaimId: contradiction?.claimId,
+        }),
+        competencyId: coveredField.competencyId,
+        statement: `${profile} profile 对 ${coveredField.name} 提供了可追溯回答。`,
+        polarity,
+        strength: profile === "strong" ? 0.9 : 0.45,
+        specificity: 0.9,
+        evaluatorConfidence: 0.9,
+        sourceQuote: answer,
+      };
+    }),
   };
 }

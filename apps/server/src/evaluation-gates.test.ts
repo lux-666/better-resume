@@ -115,7 +115,11 @@ test("major gates reject repetition, semantic promotion, missed scenarios, and h
   }
   {
     const { state, turns } = completedRun();
-    assert.ok(codes("multi_field", state, turns).has("multi_field_missed"));
+    const singleFieldTurns = turns.map((turn) => ({
+      ...turn,
+      edit: { ...turn.edit, evidence: turn.edit.evidence.slice(0, 1) },
+    }));
+    assert.ok(codes("multi_field", state, singleFieldTurns).has("multi_field_missed"));
     assert.ok(codes("vertical_depth", state, turns).has("vertical_depth_missed"));
     const evasive = codes("evasive", state, turns);
     assert.ok(evasive.has("irrelevant_case_missing"));

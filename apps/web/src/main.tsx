@@ -209,7 +209,9 @@ function App() {
         <p>从简历 Claim 出发，用可追溯证据判断真实岗位能力。</p>
         {runtime && <p className={`runtime ${runtime.mode}`}>
           <strong>{runtime.mode === "llm" ? "LLM 已连接" : "Demo 模式"}</strong>
-          {runtime.mode === "llm" && ` · ${runtime.provider}/${runtime.modelId}`}
+          {runtime.mode === "llm" && (runtime.reportModelId || runtime.interviewModelId
+            ? ` · ${runtime.provider} · Report=${runtime.reportModelId} · Interview=${runtime.interviewModelId}`
+            : ` · ${runtime.provider}/${runtime.modelId}`)}
         </p>}
       </header>
       <section className="grid">

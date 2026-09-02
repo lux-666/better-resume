@@ -73,3 +73,52 @@ test("model profiles cover multi-field, vertical-depth, and evasive behavior", (
   }, record.turn.id);
   assert.equal(fixedProfileResponse("evasive", evasive).disposition, "vague");
 });
+
+test("fixed-answer Gold labels every materially supported report field", () => {
+  const strong = createInterviewState("strong-gold", "role", createFixtureCandidate("strong"));
+  startInterview(strong);
+  const failureField = strong.report.fields.find((field) => field.id === "project_enterprise_rag:failure")!;
+  applyInterviewDecisionAfterAnsweringFields(strong, failureField.id);
+  const failure = fixedProfileResponse("strong", strong);
+  assert.deepEqual(new Set(failure.evidence.flatMap((item) => item.reportFieldIds)), new Set([
+    "project_enterprise_rag:mechanism",
+    "project_enterprise_rag:measurement",
+    "project_enterprise_rag:failure",
+  ]));
+
+  const vertical = createInterviewState("vertical-gold", "role", createFixtureCandidate("vertical"));
+  startInterview(vertical);
+  const first = fixedProfileResponse("vertical_depth", vertical);
+  assert.deepEqual(new Set(first.evidence.flatMap((item) => item.reportFieldIds)), new Set([
+    "project_enterprise_rag:ownership",
+    "project_enterprise_rag:mechanism",
+  ]));
+
+  const record = recordAnswer(vertical, first.answer, first.evidence, first.disposition);
+  applyInterviewDecision(vertical, {
+    action: "ASK_CANDIDATE",
+    targetFieldId: "project_enterprise_rag:mechanism",
+    reason: "Continue vertical-depth fixture.",
+    question: "请具体说明两路召回如何融合？",
+  }, record.turn.id);
+  const second = fixedProfileResponse("vertical_depth", vertical);
+  const secondRecord = recordAnswer(vertical, second.answer, second.evidence, second.disposition);
+  applyInterviewDecision(vertical, {
+    action: "ASK_CANDIDATE",
+    targetFieldId: "project_enterprise_rag:measurement",
+    reason: "Continue vertical-depth fixture.",
+    question: "请说明 top-50 的选择依据？",
+  }, secondRecord.turn.id);
+  const third = fixedProfileResponse("vertical_depth", vertical);
+  assert.deepEqual(third.evidence.flatMap((item) => item.claimIds), []);
+});
+
+function applyInterviewDecisionAfterAnsweringFields(state: ReturnType<typeof createInterviewState>, targetFieldId: string) {
+  state.currentQuestion = undefined;
+  applyInterviewDecision(state, {
+    action: "ASK_CANDIDATE",
+    targetFieldId,
+    reason: "Gold fixture target.",
+    question: "请讲一次真实失败、根因、修复与验证？",
+  });
+}

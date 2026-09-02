@@ -112,6 +112,8 @@ export interface StepExecutionTrace {
   mode: "demo" | "llm";
   provider?: string;
   modelId?: string;
+  reportModelId?: string;
+  interviewModelId?: string;
   evidence?: TaskExecutionTrace;
   question?: TaskExecutionTrace;
 }

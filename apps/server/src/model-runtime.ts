@@ -19,6 +19,9 @@ export type ModelRuntime = {
   streamFn?: StreamFn;
 };
 
+export type AgentModelIds = { reportModelId: string; interviewModelId: string };
+export type RoutingModelIds = { weakModelId: string; strongModelId: string };
+
 function value(env: NodeJS.ProcessEnv, name: string): string | undefined {
   return env[name]?.trim() || undefined;
 }
@@ -40,9 +43,30 @@ function numberValue(
   return parsed;
 }
 
-export function createModelRuntime(env: NodeJS.ProcessEnv = process.env): ModelRuntime {
+export function resolveAgentModelIds(env: NodeJS.ProcessEnv = process.env): AgentModelIds {
+  const defaultModelId = llmValue(env, "MODEL") ?? value(env, "PI_MODEL");
+  const reportModelId = llmValue(env, "REPORT_MODEL") ?? defaultModelId;
+  const interviewModelId = llmValue(env, "INTERVIEW_MODEL") ?? defaultModelId;
+  if (!reportModelId || !interviewModelId) throw new Error("LLM model configuration is required");
+  return { reportModelId, interviewModelId };
+}
+
+export function resolveRoutingModelIds(env: NodeJS.ProcessEnv = process.env): RoutingModelIds {
+  const weakModelId = llmValue(env, "WEAK_MODEL");
+  const strongModelId = llmValue(env, "STRONG_MODEL");
+  if (!weakModelId || !strongModelId) {
+    throw new Error("LLM_WEAK_MODEL and LLM_STRONG_MODEL are required for routing evaluation");
+  }
+  if (weakModelId === strongModelId) throw new Error("Routing weak and strong models must be different");
+  return { weakModelId, strongModelId };
+}
+
+export function createModelRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+  modelOverride?: string,
+): ModelRuntime {
   const provider = llmValue(env, "PROVIDER") ?? value(env, "PI_PROVIDER");
-  const modelId = llmValue(env, "MODEL") ?? value(env, "PI_MODEL");
+  const modelId = modelOverride ?? llmValue(env, "MODEL") ?? value(env, "PI_MODEL");
   if (Boolean(provider) !== Boolean(modelId)) throw new Error("LLM provider and model must be set together");
   if (!provider || !modelId) return { mode: "demo" };
 

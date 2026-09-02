@@ -114,6 +114,8 @@ const StepExecutionTraceSchema = Type.Object({
   mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
+  reportModelId: Type.Optional(Type.String()),
+  interviewModelId: Type.Optional(Type.String()),
   evidence: Type.Optional(TaskExecutionTraceSchema),
   question: Type.Optional(TaskExecutionTraceSchema),
 }, { additionalProperties: false });
@@ -180,6 +182,8 @@ export const RuntimeInfoSchema = Type.Object({
   mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
+  reportModelId: Type.Optional(Type.String()),
+  interviewModelId: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 
 export const InterviewProgressSchema = Type.Object({

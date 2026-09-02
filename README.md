@@ -31,10 +31,29 @@ cp .env.example .env
 npm run dev
 ```
 
+生产静态模型分工通过环境变量配置，当前批准方案为 Report 使用快速模型、Interview 使用强模型：
+
+```dotenv
+LLM_REPORT_MODEL=gpt-5.6-terra
+LLM_INTERVIEW_MODEL=gpt-5.6-sol
+```
+
 真实模型固定 Profile：
 
 ```bash
 npm run eval:model -- strong
+```
+
+Phase 1.5-C 强弱模型矩阵从 `.env` 读取 `LLM_WEAK_MODEL` 和 `LLM_STRONG_MODEL`，并保持同一个 Provider：
+
+```bash
+npm run eval:routing
+```
+
+Report Agent 的同输入 frozen replay：
+
+```bash
+npm run eval:routing:report-replay
 ```
 
 ```bash

@@ -25,7 +25,7 @@ import {
   minimalFailureTranscript,
   type EvaluationTurn,
 } from "./evaluation-gates.ts";
-import { createModelRuntime } from "./model-runtime.ts";
+import { createModelRuntime, resolveAgentModelIds } from "./model-runtime.ts";
 import { buildEvaluationScorecard, renderEvaluationScorecard } from "./evaluation-scorecard.ts";
 
 const requested = process.argv[2] ?? "all";
@@ -40,10 +40,19 @@ if (profiles.some((profile) => !(profile in modelProfiles))) {
   throw new Error(`Profile must be ${Object.keys(modelProfiles).join(", ")}, or all`);
 }
 
-const { provider, modelId, model, streamFn } = createModelRuntime();
-if (!provider || !modelId || !model || !streamFn) throw new Error("LLM configuration is required");
-const configuredModel = model;
-const configuredStreamFn = streamFn;
+const { reportModelId, interviewModelId } = resolveAgentModelIds();
+const reportRuntime = createModelRuntime(process.env, reportModelId);
+const interviewRuntime = createModelRuntime(process.env, interviewModelId);
+if (!reportRuntime.provider || !reportRuntime.model || !reportRuntime.streamFn
+  || !interviewRuntime.provider || !interviewRuntime.model || !interviewRuntime.streamFn) {
+  throw new Error("LLM configuration is required");
+}
+if (reportRuntime.provider !== interviewRuntime.provider) throw new Error("Evaluation models must use one provider");
+const provider = reportRuntime.provider;
+const reportModel = reportRuntime.model;
+const reportStreamFn = reportRuntime.streamFn;
+const interviewModel = interviewRuntime.model;
+const interviewStreamFn = interviewRuntime.streamFn;
 
 type EvaluationStage = "initial_decision" | "report_edit" | "next_decision" | "behavior_gate";
 
@@ -70,8 +79,8 @@ async function askOrFinish(
 ): Promise<string[][]> {
   const rejected: string[][] = [];
   const decision = await withOneProviderRetry(() => decideNextStepWithAgent({
-    model: configuredModel,
-    streamFn: configuredStreamFn,
+    model: interviewModel,
+    streamFn: interviewStreamFn,
     state,
     telemetry,
     onFinishRejected: (blockers) => rejected.push([...blockers]),
@@ -107,8 +116,8 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
       stage = "report_edit";
       stageRetryCount = 0;
       const edit = await withOneProviderRetry(() => editReportWithAgent({
-        model: configuredModel,
-        streamFn: configuredStreamFn,
+        model: reportModel,
+        streamFn: reportStreamFn,
         state,
         answer: response.answer,
         telemetry: turnTelemetry,
@@ -162,7 +171,9 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     status: failures.length === 0 ? "passed" : "failed",
     profile,
     provider,
-    modelId,
+    modelId: reportModelId === interviewModelId ? reportModelId : undefined,
+    reportModelId,
+    interviewModelId,
     turns: turns.map((turn) => ({
       ...turn,
       answerDisposition: turn.edit.answerDisposition,
@@ -173,6 +184,14 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     })),
     report: state.report.fields.map(({ id, status, evidenceIds }) => ({ id, status, evidenceIds })),
     contradictions: state.report.contradictions,
+    turnComparisons: turns.map((turn) => ({
+      index: turn.index,
+      answer: turn.answer,
+      expectedFieldIds: [...new Set((turn.expectedEvidence ?? []).flatMap((item) => item.reportFieldIds))].sort(),
+      actualFieldIds: [...new Set(turn.edit.evidence.flatMap((item) => item.reportFieldIds))].sort(),
+      expectedClaimIds: [...new Set((turn.expectedEvidence ?? []).flatMap((item) => item.claimIds))].sort(),
+      actualClaimIds: [...new Set(turn.edit.evidence.flatMap((item) => item.claimIds))].sort(),
+    })),
     scorecard,
     scorecardMarkdown: renderEvaluationScorecard(scorecard),
     telemetry,

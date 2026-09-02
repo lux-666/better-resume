@@ -25,6 +25,17 @@ test("HTTP command and error envelopes are executable contracts", () => {
   const state = createInterviewState("session", "role", createFixtureCandidate());
   const step = startInterview(state);
   const runtime = { mode: "demo" as const };
+  assert.equal(Check(InterviewStateResponseSchema, {
+    state,
+    stateVersion: 1,
+    runtime: {
+      mode: "llm",
+      provider: "openai_compatible",
+      reportModelId: "gpt-5.6-terra",
+      interviewModelId: "gpt-5.6-sol",
+    },
+    progress: getInterviewProgress(state, ["software_engineering"]),
+  }), true);
   const progress = getInterviewProgress(state, ["software_engineering"]);
   const response = {
     state, stateVersion: 1, questionId: "session:1",

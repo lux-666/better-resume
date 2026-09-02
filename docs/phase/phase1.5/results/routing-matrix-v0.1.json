@@ -1,0 +1,74 @@
+{
+  "version": "1.5-c-v0.1",
+  "qualityComparisonValid": false,
+  "date": "2026-09-02",
+  "provider": "openai_compatible",
+  "weakModelId": "gpt-5.6-terra",
+  "strongModelId": "gpt-5.6-sol",
+  "runs": [
+    {
+      "strategy": "weak_only",
+      "reportModelId": "gpt-5.6-terra",
+      "interviewModelId": "gpt-5.6-terra",
+      "passedProfiles": 6,
+      "completedProfiles": 6,
+      "criticalFailures": 0,
+      "majorFailures": 0,
+      "invalidatedReportFieldPrecision": 0.6197,
+      "invalidatedReportFieldRecall": 0.9778,
+      "modelRequests": 176,
+      "modelLatencyMs": 781312,
+      "inputTokens": 262103,
+      "outputTokens": 23097,
+      "cachedReadTokens": 0,
+      "cachedWriteTokens": 0,
+      "telemetryErrors": 0
+    },
+    {
+      "strategy": "strong_only",
+      "reportModelId": "gpt-5.6-sol",
+      "interviewModelId": "gpt-5.6-sol",
+      "passedProfiles": 6,
+      "completedProfiles": 6,
+      "criticalFailures": 0,
+      "majorFailures": 0,
+      "invalidatedReportFieldPrecision": 0.6769,
+      "invalidatedReportFieldRecall": 0.9778,
+      "modelRequests": 184,
+      "modelLatencyMs": 1462178,
+      "inputTokens": 273728,
+      "outputTokens": 28963,
+      "cachedReadTokens": 14208,
+      "cachedWriteTokens": 0,
+      "telemetryErrors": 4
+    },
+    {
+      "strategy": "static_split",
+      "reportModelId": "gpt-5.6-terra",
+      "interviewModelId": "gpt-5.6-sol",
+      "passedProfiles": 6,
+      "completedProfiles": 6,
+      "criticalFailures": 0,
+      "majorFailures": 0,
+      "invalidatedReportFieldPrecision": 0.5968,
+      "invalidatedReportFieldRecall": 0.9737,
+      "modelRequests": 148,
+      "modelLatencyMs": 854770,
+      "inputTokens": 216755,
+      "outputTokens": 21180,
+      "cachedReadTokens": 1024,
+      "cachedWriteTokens": 0,
+      "telemetryErrors": 0
+    }
+  ],
+  "evaluationDecision": {
+    "status": "quality_inconclusive",
+    "reason": "Incomplete multi-label Gold and different interview trajectories invalidate the historical quality comparison."
+  },
+  "deploymentDecision": {
+    "status": "approved_go",
+    "configuration": "static_split",
+    "basis": "Compared with Sol-only, total tokens decreased 21.4% and model latency decreased 41.5%. The product decision accepts the unresolved quality-comparison boundary for this rollout."
+  },
+  "caveat": "Historical behavior-matrix cost evidence only. Field precision and recall values are invalidated and retained solely for audit history."
+}

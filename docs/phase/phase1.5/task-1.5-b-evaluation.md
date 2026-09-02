@@ -64,6 +64,18 @@ saturatedFieldViolationRate
 
 同一句回答可能合法支持多个字段，因此只用 exact whole-object match 会误判；评分单位是 Field、Claim、Polarity 和 Quote grounding。
 
+固定回答的 Gold 必须覆盖回答实际提供的全部 Field，不得只复制当前提问目标。系统当前只有一种语义：允许并鼓励有实质依据的 multi-field extraction；不提供“严格只允许当前 Field”的第二模式。
+
+每轮机器结果必须保留：
+
+```text
+answer
+expectedFieldIds / actualFieldIds
+expectedClaimIds / actualClaimIds
+```
+
+没有这些明细的聚合 precision/recall 不能作为错误归因证据。
+
 ## Interview Completion
 
 - required fields coverage；

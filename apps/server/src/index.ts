@@ -37,7 +37,7 @@ import {
   type TelemetryTrace,
   withOneProviderRetry,
 } from "../../../packages/pi-runtime/src/index.ts";
-import { createModelRuntime } from "./model-runtime.ts";
+import { createModelRuntime, resolveAgentModelIds } from "./model-runtime.ts";
 
 const port = Number(process.env.PORT ?? 3000);
 const databasePath = resolve(process.env.DATABASE_PATH ?? "data/better-resume.db");
@@ -98,12 +98,26 @@ type RolePack = {
 const role = JSON.parse(
   readFileSync(resolve("roles/llm_engineer/role.json"), "utf8"),
 ) as RolePack;
-const runtime = createModelRuntime();
-const { model, streamFn } = runtime;
+const defaultRuntime = createModelRuntime();
+const agentModelIds = defaultRuntime.mode === "llm" ? resolveAgentModelIds() : undefined;
+const reportRuntime = agentModelIds
+  ? createModelRuntime(process.env, agentModelIds.reportModelId)
+  : defaultRuntime;
+const interviewRuntime = agentModelIds
+  ? createModelRuntime(process.env, agentModelIds.interviewModelId)
+  : defaultRuntime;
+if (reportRuntime.provider !== interviewRuntime.provider) throw new Error("Agent models must use one provider");
+const sharedModelId = agentModelIds?.reportModelId === agentModelIds?.interviewModelId
+  ? agentModelIds?.reportModelId
+  : undefined;
 const runtimeInfo: RuntimeInfo = {
-  mode: runtime.mode,
-  ...(runtime.provider ? { provider: runtime.provider } : {}),
-  ...(runtime.modelId ? { modelId: runtime.modelId } : {}),
+  mode: defaultRuntime.mode,
+  ...(defaultRuntime.provider ? { provider: defaultRuntime.provider } : {}),
+  ...(sharedModelId ? { modelId: sharedModelId } : {}),
+  ...(agentModelIds ? {
+    reportModelId: agentModelIds.reportModelId,
+    interviewModelId: agentModelIds.interviewModelId,
+  } : {}),
 };
 const coreCompetencyIds = role.competencies.filter((competency) => competency.core).map((competency) => competency.id);
 const commandLeaseOwner = randomUUID();
@@ -384,13 +398,18 @@ async function chooseNextStep(
       }, turnId),
     };
   }
-  if (runtime.mode === "demo") {
+  if (interviewRuntime.mode === "demo") {
     return { step: applyInterviewDecision(state, getDemoInterviewDecision(state), turnId), trace: demoTask() };
   }
-  if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
+  if (!interviewRuntime.model || !interviewRuntime.streamFn) throw new Error("Interview LLM runtime is incomplete");
   const collector = telemetry ?? new TelemetryCollector({ sessionId: state.sessionId, commandId, turnId });
   const result = await observeModelCall(
-    (current) => decideNextStepWithAgent({ model, streamFn, state, telemetry: current }), collector,
+    (current) => decideNextStepWithAgent({
+      model: interviewRuntime.model!,
+      streamFn: interviewRuntime.streamFn!,
+      state,
+      telemetry: current,
+    }), collector,
   );
   return { step: applyInterviewDecision(state, result.value, turnId), trace: result.trace };
 }
@@ -459,11 +478,11 @@ const server = createServer(async (request, response) => {
       try {
         let edit: Awaited<ReturnType<typeof editReportWithAgent>> | undefined;
         let evidenceExecution: TaskExecutionTrace;
-        if (runtime.mode === "llm") {
-          if (!model || !streamFn) throw new Error("LLM runtime is incomplete");
+        if (reportRuntime.mode === "llm") {
+          if (!reportRuntime.model || !reportRuntime.streamFn) throw new Error("Report LLM runtime is incomplete");
           const result = await observeModelCall((telemetry) => editReportWithAgent({
-              model,
-              streamFn,
+              model: reportRuntime.model!,
+              streamFn: reportRuntime.streamFn!,
               state,
               answer: command.answer,
               telemetry,
@@ -533,6 +552,8 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  const runtimeLabel = runtime.mode === "llm" ? `${runtime.provider}/${runtime.modelId}` : "demo";
+  const runtimeLabel = defaultRuntime.mode === "llm"
+    ? `${defaultRuntime.provider}/report=${agentModelIds!.reportModelId},interview=${agentModelIds!.interviewModelId}`
+    : "demo";
   console.log(`Better Resume API: http://127.0.0.1:${port} (${runtimeLabel})`);
 });
