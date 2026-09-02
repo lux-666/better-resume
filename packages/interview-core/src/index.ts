@@ -450,8 +450,10 @@ function updateContradictions(state: InterviewState, evidence: readonly Evidence
       const existing = state.report.contradictions.find((entry) => entry.claimId === claimId);
       if (item.polarity === "invalidate") {
         if (existing) {
-          existing.status = "open";
-          existing.evidenceIds.push(item.id);
+          if (existing.status === "open") {
+            existing.status = "resolved";
+          }
+          existing.resolutionEvidenceIds.push(item.id);
         } else {
           const claim = allClaims(state).find((candidate) => candidate.id === claimId);
           state.report.contradictions.push({

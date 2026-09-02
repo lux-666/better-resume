@@ -4,7 +4,7 @@
 
 | 属性 | 值 |
 | --- | --- |
-| 状态 | Planned |
+| 状态 | Completed |
 | 优先级 | P0 |
 | 依赖 | 无 |
 
@@ -64,7 +64,7 @@
 
 ## 完成后回填：具体实现与验证
 
-- **实现：**
-- **验证：**
-- **结果：**
-- **代码/报告链接：**
+- **实现：** 在现有 Profile 函数中新增 `multi_field`、`vertical_depth`、`evasive`，与 strong、weak、contradictory 组成六 Profile 语料；没有新增 DSL 或评测框架。premature-finish 继续由 Completion Validator 工具测试覆盖。
+- **验证：** `model profiles cover multi-field, vertical-depth, and evasive behavior` 验证新回答规则；全量 `npm test` 验证所有 Profile 与 Core 不变量。
+- **结果：** 语料与确定性断言完成；strong、weak、contradictory、multi-field、vertical-depth、evasive 均已产生真实模型 Transcript。真实模型语义表现由 Task 1.2 Gate 验收。
+- **代码/报告链接：** [Profile 实现](../../../packages/interview-core/src/fixed-profiles.ts)；[Profile 测试](../../../packages/interview-core/src/fixed-profiles.test.ts)。

@@ -4,7 +4,7 @@
 
 | 属性 | 值 |
 | --- | --- |
-| 状态 | Planned |
+| 状态 | Completed；连续完整门禁 3/3 |
 | 优先级 | P0 |
 | 依赖 | Task 1.1 |
 
@@ -75,8 +75,8 @@
 
 ## 完成后回填：具体实现与验证
 
-- **实现：**
-- **验证：**
-- **结果：**
-- **模型配置：**
-- **代码/报告链接：**
+- **实现：** 新增纯确定性行为 Gate，覆盖 grounding、引用、完成、轮次、重复、vague promotion、multi-field、vertical-depth、evasive 和 contradiction；`eval:model` 运行全部六 Profile，输出逐轮结构化记录、失败分类、最小 Transcript 和稳定退出码。OpenAI-compatible Provider 使用 Responses adapter。
+- **验证：** Gate 单测故意制造 Critical/Major 违规并确认拒绝；Runner 对 Provider、model output 和 runtime 使用不同分类及退出码，并在失败时输出 Profile、阶段和最小 Transcript。`npm test`、`npm run typecheck`、`npm run build` 全部通过。
+- **结果：** 在最后一次行为修复后，使用同一配置连续三次运行 `npm run eval:model -- all`；strong、weak、contradictory、multi-field、vertical-depth、evasive 在三次完整运行中全部 `passed`，进程退出码均为 0。当前验收计数为 **3/3**。
+- **模型配置：** `openai_compatible / gpt-5.6-terra`，实验 Key 仅保存在本地环境，不写入日志或文档。一次 `Connection error` 被正确分类为 Provider 失败且不计入行为连续次数。
+- **代码/报告链接：** [Runner](../../../apps/server/src/evaluate-profiles.ts)；[Gate](../../../apps/server/src/evaluation-gates.ts)；[Gate 测试](../../../apps/server/src/evaluation-gates.test.ts)。

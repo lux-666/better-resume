@@ -10,21 +10,21 @@ Interview Agent 每一步读取当前 Candidate Report 和最近对话，判断 
 
 ```text
 start:
-  read_report → ask_candidate | finish_interview
+  read_report (compact interview view) → ask_candidate | finish_interview
 
 answer:
-  read_report → edit_report
-  read_report → ask_candidate | finish_interview
+  read_report (active-project view) → edit_report
+  read_report (compact interview view) → ask_candidate | finish_interview
 ```
 
 工具职责：
 
-- `read_report`：读取 Project、Claim、Report field、grounded Evidence 和矛盾；只读。
+- `read_report`：工具名保持不变，但视图按 consumer 切分。Report Agent 只读取当前 Project 的 Claim、Report field、grounded Evidence 和相关矛盾；Interview Agent 读取全局轻量字段索引和当前焦点 Project 细节，不包含全量 Evidence 历史和 `sourceQuote`。
 - `edit_report`：提交本轮 Answer 的结构化 Evidence edit；模型不能直接改 State。
 - `ask_candidate`：选择一个 Report field，并提交一个候选人可见问题。
 - `finish_interview`：请求结束；Completion Validator 可返回 blockers，Agent 随后必须继续调查。
 
-LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体技术点是否值得继续纵向深入，是 Agent 基于 Report、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。
+LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体技术点是否值得继续纵向深入，是 Agent 基于轻量调查索引、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。Project 是一级切片边界，Report field 是项目内的焦点；不额外复制一份 Lead/Probe 状态。
 
 ## Report edit
 
@@ -62,4 +62,4 @@ LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体�
 
 ## 上下文与持久化
 
-InterviewState 是唯一权威状态。模型上下文每次从 Report、Turns 和 Evidence 重建；不保存第二份模型记忆。Answer Command 在 Provider 调用前持久化，成功的 Report edit 与下一 Decision 原子提交。
+InterviewState 是唯一权威状态。模型上下文每次从 Report、Turns 和 Evidence 重建；不保存第二份模型记忆。Report Agent 获得当前 Project 的完整 Evidence 切片，Interview Agent 只获得跨 Project 的轻量索引与一个焦点 Project，两个投影不共用同一个大对象。Answer Command 在 Provider 调用前持久化，成功的 Report edit 与下一 Decision 原子提交。

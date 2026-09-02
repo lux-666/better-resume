@@ -2,7 +2,7 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：Blocked by [Phase 1](../phase1/README.md)**
+**状态：Ready — [Phase 1](../phase1/README.md) 已通过**
 
 ## 业务目标
 

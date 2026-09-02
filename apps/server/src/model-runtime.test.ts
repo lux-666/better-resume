@@ -16,6 +16,7 @@ test("creates an OpenAI-compatible runtime from .env keys", () => {
   assert.equal(runtime.mode, "llm");
   assert.equal(runtime.model?.provider, "openai_compatible");
   assert.equal(runtime.model?.id, "test-model");
+  assert.equal(runtime.model?.api, "openai-responses");
   assert.equal(runtime.model?.baseUrl, "https://example.com/v1");
   assert.equal(runtime.model?.maxTokens, 4096);
   assert.ok(runtime.streamFn);

@@ -22,6 +22,8 @@ class ApiRequestError extends Error {
 }
 
 const sessionStorageKey = "better-resume-session-id";
+const pilotMode = new URLSearchParams(window.location.search).get("pilot") === "1";
+const pilotStartedAtKey = (sessionId: string) => `better-resume-pilot-started-at:${sessionId}`;
 
 type HealthResponse = { ok: boolean; runtime: RuntimeInfo };
 type BusyAction = "create" | "start" | "submit";
@@ -94,6 +96,7 @@ function App() {
     if (busyRef.current) return;
     localStorage.removeItem(sessionStorageKey);
     setSession(undefined);
+    setCandidateName("");
     setAnswer("");
     setPendingCommandId("");
     setError("");
@@ -129,11 +132,40 @@ function App() {
     void runOnce("start", async () => {
       try {
         setError("");
-        setSession(await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/start`));
+        const started = await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/start`);
+        setSession(started);
+        if (pilotMode && !localStorage.getItem(pilotStartedAtKey(interview.sessionId))) {
+          localStorage.setItem(pilotStartedAtKey(interview.sessionId), new Date().toISOString());
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "启动失败");
       }
     });
+  }
+
+  function exportPilotSession(): void {
+    if (!session) return;
+    const startedAt = localStorage.getItem(pilotStartedAtKey(session.state.sessionId));
+    const exportedAt = new Date().toISOString();
+    const durationMinutes = startedAt
+      ? Math.round((Date.parse(exportedAt) - Date.parse(startedAt)) / 600) / 100
+      : undefined;
+    const payload = {
+      schemaVersion: 1,
+      pilotMode,
+      startedAt,
+      exportedAt,
+      durationMinutes,
+      session,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `phase1-pilot-${session.state.sessionId}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function submit(): void {
@@ -170,7 +202,7 @@ function App() {
   }
 
   return (
-    <main>
+    <main className={pilotMode && interview?.status === "active" ? "pilot-mode pilot-active" : undefined}>
       <header>
         <p className="eyebrow">EVIDENCE-DRIVEN INTERVIEW</p>
         <h1>Better Resume</h1>
@@ -223,10 +255,18 @@ function App() {
             </button>
           </>}
           {interview?.status === "completed" && <p className="done">本轮证据采集完成。</p>}
+          {pilotMode && interview && <button className="secondary" onClick={exportPilotSession}>
+            下载 Pilot Session JSON
+          </button>}
           {interview && <button className="secondary" onClick={newInterview} disabled={Boolean(busyAction)}>新建 Session</button>}
           {error && <p className="error">{error}</p>}
         </article>
         <article>
+          {pilotMode && interview?.status === "active" && <section className="pilot-lock">
+            <span>02 / 面试后审核</span>
+            <h2>本轮完成后开放</h2>
+            <p>面试过程中不要查看 Report、Evidence 或 Agent Trace，避免这些内部信息影响你的回答与体验评分。</p>
+          </section>}
           <span>02 / 证据覆盖进度</span>
           {progress && <section className="progress-panel">
             <div className="progress-title">

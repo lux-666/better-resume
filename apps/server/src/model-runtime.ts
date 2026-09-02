@@ -8,7 +8,7 @@ import {
   type MutableModels,
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 export type ModelRuntime = {
@@ -71,10 +71,10 @@ export function createModelRuntime(env: NodeJS.ProcessEnv = process.env): ModelR
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new Error("LLM_BASE_URL must use http or https");
     }
-    const model: Model<"openai-completions"> = {
+    const model: Model<"openai-responses"> = {
       id: modelId,
       name: modelId,
-      api: "openai-completions",
+      api: "openai-responses",
       provider,
       baseUrl: baseUrl.replace(/\/+$/, ""),
       reasoning: false,
@@ -90,7 +90,7 @@ export function createModelRuntime(env: NodeJS.ProcessEnv = process.env): ModelR
       baseUrl: model.baseUrl,
       auth: { apiKey: envApiKeyAuth("OpenAI-compatible API key", ["LLM_API_KEY", "GENE_AGENT_LLM_API_KEY"]) },
       models: [model],
-      api: openAICompletionsApi(),
+      api: openAIResponsesApi(),
     }));
   } else {
     models = builtinModels();

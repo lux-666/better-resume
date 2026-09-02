@@ -55,6 +55,10 @@ small { text-align: right; }
 .done { padding: 1rem; background: #dcebdd; color: #205a3c; font-weight: 700; }
 .audit { margin: 1rem 0; border-top: 1px solid #ddd8cc; }
 .audit summary { padding: 1rem 0; color: #56665b; font-weight: 700; cursor: pointer; }
+.pilot-lock { padding: 1rem; border: 1px solid #c7aa7a; background: #f5ead5; }
+.pilot-lock h2 { min-height: 0; margin-bottom: 1rem; }
+.pilot-lock p { margin-bottom: 0; color: #654f2e; line-height: 1.55; }
+.pilot-active .grid article:nth-child(2) > :not(.pilot-lock) { display: none; }
 blockquote { margin: 1rem 0 0; padding: 1rem; border-left: 3px solid #d2643b; background: #f0ece2; }
 blockquote p { margin: .5rem 0 0; color: #56665b; }
 footer { padding-top: 3rem; color: #56665b; text-align: center; font-family: ui-monospace, monospace; }

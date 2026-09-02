@@ -132,6 +132,23 @@ test("contradictions block finish until grounded clarification resolves them", (
   assert.equal(state.report.contradictions[0].status, "resolved");
 });
 
+test("a repeated grounded denial clarifies a contradiction without reopening it", () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  startInterview(state);
+  const denial = "这个核心模块不是我做的。";
+  const denied = recordAnswer(state, denial, [evidenceFor(state, denial, "invalidate")], "denial");
+  for (const answer of ["准确说法是我只负责接口联调。", "我确实没有主导核心设计。"]) {
+    applyInterviewDecision(state, {
+      action: "ASK_CANDIDATE",
+      targetFieldId: denied.evidence[0].reportFieldIds[0],
+      reason: "Clarify the contradiction.",
+      question: `请再次确认准确分工 ${state.turns.length}？`,
+    });
+    recordAnswer(state, answer, [evidenceFor(state, answer, "invalidate")], "denial");
+    assert.equal(state.report.contradictions[0].status, "resolved");
+  }
+});
+
 test("progress reports Candidate Report coverage separately from turn count", () => {
   const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
   assert.deepEqual(getInterviewProgress(state, ["software_engineering", "evaluation"]), {

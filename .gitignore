@@ -2,6 +2,7 @@ node_modules/
 dist/
 apps/web/dist/
 data/*.db*
+data/phase1-pilot/
 .env
 .env.*
 !.env.example
