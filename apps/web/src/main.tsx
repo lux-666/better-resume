@@ -1,3 +1,6 @@
+import { DemoProfiles } from "./demo-profiles.tsx";
+import { ReportPanel } from "./report-panel.tsx";
+import { SupplementForm } from "./supplement-form.tsx";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
@@ -11,18 +14,15 @@ import type {
 import { parseJobDescription, parseResume } from "./intake-parser.ts";
 import "./style.css";
 
-class ApiRequestError extends Error {
-  constructor(message: string, readonly code: ApiError["code"], readonly retryable: boolean) {
-    super(message);
-  }
-}
+import { ApiRequestError, post, request } from "./api.ts";
+import { useInterviewSession, sessionStorageKey } from "./use-interview-session.ts";
+import { RunProgressPanel } from "./run-progress.tsx";
+import { TechnicalPanel } from "./technical-panel.tsx";
 
-const sessionStorageKey = "better-resume-session-id";
 const pilotMode = new URLSearchParams(window.location.search).get("pilot") === "1";
 const pilotStartedAtKey = (sessionId: string) => `better-resume-pilot-started-at:${sessionId}`;
 
 type HealthResponse = { ok: boolean; runtime: RuntimeInfo };
-type BusyAction = "create" | "start" | "submit";
 type ProjectForm = {
   key: string;
   name: string;
@@ -69,22 +69,6 @@ async function extractTextDocument(file: File): Promise<ExtractedDocument> {
   return { fileName: file.name, text: normalized };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
-  const value = (await response.json()) as T | ApiError;
-  if (!response.ok) {
-    const error = value as ApiError;
-    throw new ApiRequestError(error.message ?? "请求失败", error.code, error.retryable ?? false);
-  }
-  return value as T;
-}
-
-const post = <T,>(path: string, body: Record<string, unknown> = {}) => request<T>(path, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
-});
-
 function App() {
   const [candidateName, setCandidateName] = useState("");
   const [skills, setSkills] = useState("");
@@ -95,12 +79,9 @@ function App() {
   const [jobRequirements, setJobRequirements] = useState("");
   const [importNotice, setImportNotice] = useState("");
   const [extractingDocument, setExtractingDocument] = useState<"resume" | "job">();
-  const [session, setSession] = useState<InterviewStateResponse>();
-  const [answer, setAnswer] = useState("");
-  const [pendingCommandId, setPendingCommandId] = useState("");
-  const [busyAction, setBusyAction] = useState<BusyAction>();
-  const busyRef = useRef(false);
-  const [error, setError] = useState("");
+  const { session, setSession, answer, setAnswer, pendingCommandId, setPendingCommandId, busyAction, busyRef,
+    error, setError, restore, runOnce, start, submit, run, isProcessing, connection } = useInterviewSession();
+  const [auditTab, setAuditTab] = useState<"evidence" | "technical" | "report">("evidence");
   const [serverRuntime, setServerRuntime] = useState<RuntimeInfo>();
   const interview = session?.state;
   const runtime = session?.runtime ?? serverRuntime;
@@ -112,29 +93,13 @@ function App() {
   const hasJobInput = jobValues.some((value) => value.trim());
   const jobIsIncomplete = hasJobInput && jobValues.some((value) => !value.trim());
 
-  function restore(restored: InterviewStateResponse): void {
-    setSession(restored);
-    setPendingCommandId(restored.pendingCommand?.commandId ?? "");
-    setAnswer(restored.pendingCommand?.answer ?? "");
-  }
-
   useEffect(() => {
     request<HealthResponse>("/api/health")
       .then((health) => setServerRuntime(health.runtime))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "API 未启动"));
-    const sessionId = localStorage.getItem(sessionStorageKey);
-    if (sessionId) {
-      request<InterviewStateResponse>(`/api/interviews/${sessionId}/state`)
-        .then(restore)
-        .catch((cause: unknown) => {
-          if (cause instanceof ApiRequestError && cause.code === "NOT_FOUND") {
-            localStorage.removeItem(sessionStorageKey);
-          } else {
-            setError(cause instanceof Error ? cause.message : "恢复失败");
-          }
-        });
-    }
   }, []);
+
+  useEffect(() => { if (interview?.status === "completed") setAuditTab("report"); }, [interview?.status]);
 
   function newInterview(): void {
     if (busyRef.current) return;
@@ -151,18 +116,6 @@ function App() {
     setAnswer("");
     setPendingCommandId("");
     setError("");
-  }
-
-  async function runOnce(action: BusyAction, operation: () => Promise<void>): Promise<void> {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusyAction(action);
-    try {
-      await operation();
-    } finally {
-      busyRef.current = false;
-      setBusyAction(undefined);
-    }
   }
 
   function createInterview(): void {
@@ -236,22 +189,6 @@ function App() {
     setProjects((current) => current.map((project) => project.key === key ? { ...project, [field]: value } : project));
   }
 
-  function start(): void {
-    if (!interview) return;
-    void runOnce("start", async () => {
-      try {
-        setError("");
-        const started = await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/start`);
-        setSession(started);
-        if (pilotMode && !localStorage.getItem(pilotStartedAtKey(interview.sessionId))) {
-          localStorage.setItem(pilotStartedAtKey(interview.sessionId), new Date().toISOString());
-        }
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "启动失败");
-      }
-    });
-  }
-
   function exportPilotSession(): void {
     if (!session) return;
     const startedAt = localStorage.getItem(pilotStartedAtKey(session.state.sessionId));
@@ -296,39 +233,6 @@ function App() {
     }
   }
 
-  function submit(): void {
-    const questionId = session?.questionId;
-    if (!interview || !session || !questionId || !answer.trim()) return;
-    void runOnce("submit", async () => {
-      const commandId = pendingCommandId || crypto.randomUUID();
-      if (!pendingCommandId) setPendingCommandId(commandId);
-      try {
-        setError("");
-        const command: AnswerCommand = {
-          commandId,
-          questionId,
-          expectedStateVersion: session.stateVersion,
-          answer,
-        };
-        const step = await post<InterviewStepResponse>(`/api/interviews/${interview.sessionId}/answer`, command);
-        setSession(step);
-        setAnswer("");
-        setPendingCommandId("");
-      } catch (cause) {
-        if (cause instanceof ApiRequestError && cause.code === "STATE_CONFLICT") {
-          try {
-            restore(await request<InterviewStateResponse>(`/api/interviews/${interview.sessionId}/state`));
-          } catch {
-            if (!cause.retryable) setPendingCommandId("");
-          }
-        } else if (cause instanceof ApiRequestError && !cause.retryable) {
-          setPendingCommandId("");
-        }
-        setError(cause instanceof Error ? cause.message : "提交失败");
-      }
-    });
-  }
-
   return (
     <main className={pilotMode && interview?.status === "active" ? "pilot-mode pilot-active" : undefined}>
       <header>
@@ -347,6 +251,12 @@ function App() {
           <span>01 / 面试</span>
           <h2>{interview?.role.name ?? "创建候选人档案"}</h2>
           {!interview && <>
+            <DemoProfiles onChoose={(intake) => {
+              setCandidateName(intake.candidate.name); setSkills(intake.candidate.skills.join("，"));
+              setProjects(intake.candidate.projects.map((project) => ({ ...project, key: crypto.randomUUID() })));
+              setJobTitle(intake.job?.title ?? ""); setJobIntroduction(intake.job?.introduction ?? "");
+              setJobResponsibilities(intake.job?.responsibilities ?? ""); setJobRequirements(intake.job?.requirements ?? "");
+            }} />
             <fieldset>
               <legend>候选人信息</legend>
               <p className="field-hint">可直接填写，也可先上传简历自动回填；解析后只保留下面的结构化字段。</p>
@@ -482,12 +392,15 @@ function App() {
               <div><dt>项目</dt><dd>{interview.intake.candidate.projects.length}</dd></div>
               <div><dt>JD</dt><dd>{interview.intake.job ? "已填写" : "未填写"}</dd></div>
             </dl>
-            <button onClick={start} disabled={Boolean(busyAction)} aria-busy={busyAction === "start"}>
+            <button onClick={start} disabled={isProcessing} aria-busy={busyAction === "start"}>
               {busyAction === "start" && <span className="spinner" aria-hidden="true" />}
               {busyAction === "start" ? "启动中…" : "开始面试"}
             </button>
           </>}
           {interview?.status === "active" && <>
+            {interview.turns.length === 0 && <p className="opening">你好，{interview.candidate.name}。我们会围绕你的项目经历逐步交流，通常约 20–30 分钟，最多 15 个问题。不清楚的内容可以直接说明，也可以请我解释或跳过。</p>}
+            {interview.currentTransition && <p>{interview.currentTransition}</p>}
+            {interview.currentClarification && <p className="clarification">{interview.currentClarification}</p>}
             {interview.currentAcknowledgement && <p>{interview.currentAcknowledgement}</p>}
             <p className="question">{interview.currentQuestion}</p>
             <label htmlFor="answer">你的回答</label>
@@ -495,16 +408,24 @@ function App() {
               id="answer"
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
-              disabled={Boolean(pendingCommandId) || Boolean(busyAction)}
+              onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
+              disabled={Boolean(pendingCommandId) || isProcessing}
               maxLength={10_000}
               rows={5}
             />
-            <button onClick={submit} disabled={!answer.trim() || Boolean(busyAction)} aria-busy={busyAction === "submit"}>
+            <p className="field-hint">Enter 提交 · Shift + Enter 换行</p>
+            <div className="actions"><button className="secondary" onClick={() => submit("clarify")}
+              disabled={isProcessing || Boolean(pendingCommandId) || interview.clarifications?.some((item) => item.question === interview.currentQuestion)}>请解释这个问题</button>
+              <button className="secondary" onClick={() => submit("skip")} disabled={isProcessing || Boolean(pendingCommandId)}>跳过这个问题</button></div>
+            <button onClick={() => submit()} disabled={!answer.trim() || isProcessing} aria-busy={busyAction === "submit"}>
               {busyAction === "submit" && <span className="spinner" aria-hidden="true" />}
               {busyAction === "submit" ? "提交中…" : pendingCommandId ? "重试提交" : "提交回答"}
             </button>
           </>}
-          {interview?.status === "completed" && <p className="done">本轮证据采集完成。</p>}
+          {interview?.status === "completed" && <>
+            <p className="done">感谢你，{interview.candidate.name}。本次交流已结束，报告会整理你分享的内容和仍需核实的事项。你也可以补充一条项目事实。</p>
+            <SupplementForm session={session!} onComplete={restore} />
+          </>}
           {interview && <>
             <button className="secondary" onClick={() => void downloadInterviewReport("json")}>
               下载{interview.status === "completed" ? "最终" : "当前"} Report JSON
@@ -516,7 +437,8 @@ function App() {
           {pilotMode && interview && <button className="secondary" onClick={exportPilotSession}>
             下载 Pilot Session JSON
           </button>}
-          {interview && <button className="secondary" onClick={newInterview} disabled={Boolean(busyAction)}>新建 Session</button>}
+          {interview && <button className="secondary" onClick={newInterview} disabled={isProcessing}>新建 Session</button>}
+          <RunProgressPanel run={run} submitting={busyAction === "submit" || busyAction === "start"} reconnecting={connection === "reconnecting"} />
           {error && <p className="error">{error}</p>}
         </article>
         <article>
@@ -525,7 +447,15 @@ function App() {
             <h2>本轮完成后开放</h2>
             <p>面试过程中不要查看 Report、Evidence 或 Agent Trace，避免这些内部信息影响你的回答与体验评分。</p>
           </section>}
-          <span>02 / 证据覆盖进度</span>
+          {interview && <nav className="tabs" aria-label="审核面板">
+            <button className={auditTab === "evidence" ? "selected" : "secondary"} onClick={() => setAuditTab("evidence")}>面试进度</button>
+            <button className={auditTab === "report" ? "selected" : "secondary"} onClick={() => setAuditTab("report")}>报告预览</button>
+            <button className={auditTab === "technical" ? "selected" : "secondary"} onClick={() => setAuditTab("technical")}>技术视图</button>
+          </nav>}
+          {interview && auditTab === "report" && <ReportPanel sessionId={interview.sessionId} version={session!.stateVersion} />}
+          {interview && auditTab === "technical" && <TechnicalPanel state={interview} version={session!.stateVersion} />}
+          {auditTab === "evidence" && <div className="evidence-panel">
+          <span>02 / 面试进度</span>
           {progress && <section className="progress-panel">
             <div className="progress-title">
               <strong>{progress.coveragePercent}%</strong>
@@ -533,8 +463,8 @@ function App() {
             </div>
             <progress max="100" value={progress.coveragePercent} />
             <dl className="progress-grid">
-              <div><dt>Project</dt><dd>{progress.projects.covered}/{progress.projects.total}</dd></div>
-              <div><dt>Report</dt><dd>{progress.reportFields.covered}/{progress.reportFields.total}</dd></div>
+              <div><dt>已聊到的项目</dt><dd>{progress.projects.covered}/{progress.projects.total}</dd></div>
+              <div><dt>已聊到的话题</dt><dd>{progress.reportFields.covered}/{progress.reportFields.total}</dd></div>
               <div><dt>核心能力</dt><dd>{progress.coreCompetencies.covered}/{progress.coreCompetencies.total}</dd></div>
               <div><dt>轮次</dt><dd>{progress.turns.completed}/{progress.turns.max}</dd></div>
               <div><dt>待澄清矛盾</dt><dd>{progress.contradictionsOpen}</dd></div>
@@ -578,6 +508,7 @@ function App() {
             <strong>{item.polarity === "support" ? "✓" : "?"} {item.statement}</strong>
             <p>“{item.sourceQuote}”</p>
           </blockquote>)}
+          </div>}
         </article>
       </section>
       <footer>Report → Investigate → Ask → Grounded edit → Finish</footer>
