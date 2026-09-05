@@ -68,7 +68,7 @@ recall({
 
 ## 追踪
 
-Telemetry 新增 `recall` span 与 `summary_update` span；技术视图展示本轮召回条目与摘要版本。
+复用统一 Trace/Span 增加 recall、summary_update 与索引更新；展示召回条目、摘要版本、来源 State 版本、上下文预算与延迟增量。
 
 ## 评测
 

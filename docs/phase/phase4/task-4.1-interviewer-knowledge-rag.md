@@ -45,7 +45,7 @@ retrieve_probe_knowledge({
 
 ## 追踪
 
-Telemetry 新增 `retrieval` span：查询、过滤条件、命中 ID 与分数、耗时、是否被 `ask_candidate` 引用。技术视图展示本轮检索与引用关系。
+复用统一 Trace/Span：查询嵌入与本地检索分别计时（<20ms 仅指本地检索）；记录不可用、失败和降级状态。Telemetry 新增 `retrieval` span：查询、过滤条件、命中 ID 与分数、耗时、是否被 `ask_candidate` 引用。技术视图展示本轮检索与引用关系。
 
 ## 评测
 

@@ -46,4 +46,4 @@ validate command
 
 ## 观测
 
-每个 DecisionTrace 记录 action、targetFieldId、reason、问题和 Evidence/Decision 模型调用的来源、延迟与重试数。失败调用尚未进入独立事件表。
+每个 DecisionTrace 记录 action、targetFieldId、reason、问题和 Evidence/Decision 模型调用的来源、延迟与重试数。独立 telemetry_traces 已保存执行与失败 Span。Phase 3 补齐生命周期、实时进度、统一聚合与恢复；遥测独立于业务 State，业务提交才决定执行成功。

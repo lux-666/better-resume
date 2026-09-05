@@ -1,0 +1,44 @@
+[
+  {
+    "id": "statement",
+    "expectedDepthLevel": 1,
+    "fieldKind": "ownership",
+    "answer": "我负责这个项目的接口实现。",
+    "expectedDisposition": "substantive"
+  },
+  {
+    "id": "detail",
+    "expectedDepthLevel": 2,
+    "fieldKind": "mechanism",
+    "answer": "我把任务按接收、校验、入库三步执行，校验不通过就进入待处理队列。",
+    "expectedDisposition": "substantive"
+  },
+  {
+    "id": "rationale",
+    "expectedDepthLevel": 3,
+    "fieldKind": "mechanism",
+    "answer": "我选先校验再入库，因为历史日志中大多数失败来自字段缺失，提前检查可以阻止这类错误进入数据库。",
+    "expectedDisposition": "substantive"
+  },
+  {
+    "id": "tradeoff",
+    "expectedDepthLevel": 4,
+    "fieldKind": "mechanism",
+    "answer": "我比较了同步校验和异步校验；同步会增加约20ms延迟但能立即拒绝坏数据，异步响应更快但错误发现较晚。我们选择同步，接受这20ms换取及时失败。",
+    "expectedDisposition": "substantive"
+  },
+  {
+    "id": "transfer",
+    "expectedDepthLevel": 5,
+    "fieldKind": "mechanism",
+    "answer": "如果流量扩大十倍，同步校验会先耗尽CPU。我会把可延迟的检查移到异步队列，同时保留权限和必填项的同步校验，再用相同请求集验证错误率没有上升。",
+    "expectedDisposition": "substantive"
+  },
+  {
+    "id": "boundary",
+    "expectedDepthLevel": 3,
+    "fieldKind": "mechanism",
+    "answer": "具体选择依据我不清楚，参数和方案是同事决定的。",
+    "expectedDisposition": "vague"
+  }
+]

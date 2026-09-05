@@ -1,0 +1,32 @@
+{
+  "id": "demo-boundary",
+  "label": "能力边界 · 依据待展开",
+  "profile": "boundary",
+  "intake": {
+    "candidate": {
+      "name": "演示候选人乙",
+      "skills": [
+        "流程实施"
+      ],
+      "projects": [
+        {
+          "name": "数据核对流程",
+          "description": "我参与了数据核对流程的配置、实施和结果记录。"
+        }
+      ]
+    },
+    "job": {
+      "title": "平台工程师",
+      "introduction": "负责业务平台的可靠交付。",
+      "responsibilities": "设计并实现服务，验证上线结果，处理生产故障。",
+      "requirements": "具备系统设计、数据验证和故障定位经验。"
+    }
+  },
+  "script": {
+    "ownership": "我负责接收数据清单、逐条核对字段，并把不一致项记入共享表格。",
+    "mechanism": "我按接收、校验、记录三个步骤配置流程，每次最多处理50条。",
+    "measurement": "每天处理50条，我只记录通过和未通过的数量。",
+    "failure": "我把异常项单独记录后交给同事处理。",
+    "boundary": "具体选择依据我不清楚，参数和方案是同事决定的。"
+  }
+}

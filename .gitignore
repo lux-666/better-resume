@@ -3,8 +3,10 @@ dist/
 apps/web/dist/
 data/*.db*
 data/phase1-pilot/
+data/evaluations/
 .env
 .env.*
 !.env.example
 .DS_Store
 npm-debug.log*
+data/demo-profiles/replays/

@@ -14,7 +14,7 @@ Candidate Report
   → deterministic guardrails accept / reject
 ```
 
-Agent 是主驾驶。Core 不保存 Lead、Probe、selectedProbe、saturation 或问题路由状态；它只保存事实工作区并执行 Evidence grounding、完成校验、问题约束、硬轮次和持久化边界。
+Agent 是主驾驶。Core 不保存 Probe、selectedProbe、saturation 或问题路由状态；可保存有原话来源的线索事实，其跟进状态由已接受 Decision 引用派生；它只保存事实工作区并执行 Evidence grounding、完成校验、问题约束、硬轮次和持久化边界。
 
 ## 系统地图
 

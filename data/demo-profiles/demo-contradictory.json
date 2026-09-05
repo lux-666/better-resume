@@ -1,0 +1,30 @@
+{
+  "id": "demo-contradictory",
+  "label": "矛盾澄清 · 无 JD",
+  "profile": "contradictory",
+  "intake": {
+    "candidate": {
+      "name": "演示候选人丙",
+      "skills": [
+        "项目实施"
+      ],
+      "projects": [
+        {
+          "name": "服务上线",
+          "description": "我主导了核心方案设计并完成上线。"
+        },
+        {
+          "name": "报表整理",
+          "description": "我负责报表核对与结果记录。"
+        }
+      ]
+    }
+  },
+  "script": {
+    "ownership": "原来的表述不准确，核心方案设计并不是我完成的，我只做了配置和联调。",
+    "clarification": "准确说，我只按同事提供的方案配置和联调，没有主导整体设计。",
+    "mechanism": "我按准备、实施、核对三个步骤执行，选择依据由同事确定，我并不清楚。",
+    "measurement": "我对照同一批50条样本记录通过数量，但没有保留上线前的基线。",
+    "failure": "异常由同事定位，我只配合复现，具体根因我不清楚。"
+  }
+}

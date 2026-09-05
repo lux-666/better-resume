@@ -29,6 +29,8 @@ reachedDepth = 2, boundaryReason 在第 3 层
 
 ## 线索表
 
+线索是有原话来源的事实记录；跟进状态由已接受 Decision 的引用与 Session 完成态派生，不保存另一套调查路由状态。Core 只验证来源、项目归属与重复引用，调查方向仍由 Agent 决定。
+
 `InterviewState` 增加 `leads: Lead[]`：
 
 ```ts
@@ -45,7 +47,7 @@ interface Lead {
 }
 ```
 
-Report Agent 在 `edit_report` 中同时提交 `leads`，`text` 受与 `sourceQuote` 相同的逐字校验。Interview Agent 的 `read_report` 视图新增 `openLeads`；`ask_candidate` 增加可选 `followsLeadId`，被引用的 Lead 状态变为 followed。Agent 选择不跟进某个 Lead 时不需要解释，但 finish 时所有 open Lead 自动标记 dropped 并写入报告“未展开线索”。
+Report Agent 在 `edit_report` 中同时提交 `leads`，`text` 受与 `sourceQuote` 相同的逐字校验。Interview Agent 的 `read_report` 视图新增 `openLeads`；`ask_candidate` 增加可选 `followsLeadId`，被已接受 Decision 引用的 Lead 派生为 followed。Agent 选择不跟进某个 Lead 时不需要解释；完成时未引用的 Lead 派生为 dropped 并写入报告“未展开线索”。
 
 这解决 P01-A 的漏追问题：漏追不再是无法追溯的行为，而是报告里一条可见记录。
 

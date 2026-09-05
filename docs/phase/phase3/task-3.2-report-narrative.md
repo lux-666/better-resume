@@ -66,7 +66,7 @@ interface FieldConclusion {
 }
 ```
 
-旧 Session 读取时把已有 `summary` 迁移为单元素 `supportStatements`。
+新旧 Session 都按已有 Evidence 的 polarity 重建结论；不能把旧 summary 一律当作支持性事实。历史 Evidence 缺少 depthLevel 时保留未知，不推测深度。
 
 ## 能力项利用
 
@@ -76,6 +76,7 @@ interface FieldConclusion {
 
 - 面试进行中，右栏增加“报告预览”Tab，展示 Layer 1 与已生成的 Layer 2；每轮回答后刷新；
 - 面试完成后主区切换为完整报告视图，下载按钮保留；
+- 叙述生成使用独立 Narrative Trace，绑定来源 State 版本；失败明确显示并可恢复，不能阻塞下一问。
 - 叙述生成在 `finish_interview` 被接受后异步执行，页面轮询 `GET /api/interviews/:id/report`，`narrativeStatus: "pending" | "ready" | "failed"`；
 - 面试进行中的叙述预览只在候选人不可见的审核模式下展示，避免候选人受结论影响。Pilot 模式已有锁定机制，复用。
 

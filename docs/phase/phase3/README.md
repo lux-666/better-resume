@@ -2,7 +2,7 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：Planned。前置条件：Phase 2 `v0.1.0` 本地 Demo Go。**
+**状态：Implementation complete; Phase exit gates pending manual rubric and one Provider-dependent boundary rerun.**
 
 ## 业务目标
 
@@ -21,19 +21,23 @@ Phase 3 不改变三条硬边界：`InterviewState` 是唯一权威状态；每�
 - Interview Agent prompt 没有人设、开场、过渡和收尾规范；结束语是“本轮证据采集完成。”；Pilot 中出现“暂按不确定记录”这类内部记录口吻进入候选人可见文本。
 - `skills/` 下四个追问策略目录为空。
 
+新增运行体验目标：提交后立即得到本地反馈，等待期间持续显示真实处理阶段与已用时间，技术视图展示统一 Trace/Span 统计。
+
 ## Tasks
 
 | Task | 状态 | 依赖 | 交付结果 |
 | --- | --- | --- | --- |
-| [3.1 深度梯与线索记忆](task-3.1-depth-and-leads.md) | Planned | Phase 2 | Evidence 深度层级、未跟进线索表、四类追问策略库、能力边界结论 |
-| [3.2 报告叙述 Agent](task-3.2-report-narrative.md) | Planned | 3.1 | 引用受控的叙述层、字段结论聚合、页面内实时报告、招聘方与候选人双版建议 |
-| [3.3 面试官人设与交互](task-3.3-interviewer-persona.md) | Planned | 无 | 人设与语气规范、开场收尾、过渡语、候选人反问处理、流式问题输出、内部口吻过滤 |
-| [3.4 路演就绪](task-3.4-demo-readiness.md) | Planned | 3.1–3.3 | 三个预置演示档案、技术面板、演示脚本、路演回归 Gate |
+| [3.0 执行链路与实时可观测](task-3.0-runtime-observability.md) | Implemented | Phase 2 | 执行隔离、deadline、实时进度、统一 Trace/Span 统计 |
+| [3.1 深度梯与线索记忆](task-3.1-depth-and-leads.md) | Implemented | Phase 2 | Evidence 深度层级、未跟进线索表、四类追问策略库、能力边界结论 |
+| [3.2 报告叙述 Agent](task-3.2-report-narrative.md) | Implemented | 3.1 | 引用受控的叙述层、字段结论聚合、页面内实时报告、招聘方与候选人双版建议 |
+| [3.3 面试官人设与交互](task-3.3-interviewer-persona.md) | Implemented | 无 | 人设与语气规范、开场收尾、过渡语、候选人反问处理、流式问题输出、内部口吻过滤 |
+| [3.4 路演就绪](task-3.4-demo-readiness.md) | Implemented; real boundary rerun pending | 3.1–3.3 | 三个预置演示档案、技术面板、演示脚本、路演回归 Gate |
 
 执行顺序：
 
 ```text
-3.3 面试官人设与交互      低风险，不触碰状态模型，可先行
+3.0 执行链路与实时可观测  先行，冻结事务与统计口径
+3.3 面试官人设与交互      文案先行；反问、跳过、补充按独立状态契约验证
 3.1 深度梯与线索记忆      扩展 Evidence 与 Agent 视图，是 3.2 的数据来源
 3.2 报告叙述 Agent        依赖深度层级和线索表产出可读结论
 3.4 路演就绪              收口，冻结演示档案与脚本
@@ -54,4 +58,5 @@ Phase 3 不改变三条硬边界：`InterviewState` 是唯一权威状态；每�
 - 报告叙述层在全部发布场景下通过引用校验，页面内实时报告与下载报告来自同一 State；
 - 人工 Rubric 对问题质量、追问相关性、语气职业感三项不低于 Phase 2 人工评审基线；
 - 三个演示档案在真实模型下连续 3/3 完成，路演脚本每一步都有对应的界面状态；
+- 3.0 的慢响应、重连、超时、统计一致性与执行隔离验收通过；
 - `npm test`、typecheck、build 通过。

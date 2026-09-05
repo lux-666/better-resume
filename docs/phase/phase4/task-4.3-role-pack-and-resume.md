@@ -74,6 +74,10 @@ requirementMatrix: Array<{
 - 新增 `DELETE /api/interviews/:id/resume-index`，页面在完成态提供按钮；
 - 简历片段不能成为 Evidence `sourceQuote`。
 
+## 运行观测
+
+创建阶段的 Role Pack、查询嵌入和简历索引接入统一 Trace/Span 与候选人进度通道，记录耗时、结果、降级与来源版本；原始简历不进入遥测。
+
 ## 评测
 
 - 两份真实结构 JD 加对应候选人档案，人工标注期望的要求映射与 `must` 判定；

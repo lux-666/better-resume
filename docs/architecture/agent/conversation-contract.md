@@ -24,7 +24,7 @@ answer:
 - `ask_candidate`：选择一个 Report field，并提交一个候选人可见问题。
 - `finish_interview`：请求结束；Completion Validator 可返回 blockers，Agent 随后必须继续调查。
 
-LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体方法、决策或约束是否值得继续纵向深入，是 Agent 基于轻量调查索引、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。Project 是一级切片边界，Report field 是项目内的焦点；不额外复制一份 Lead/Probe 状态。
+LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体方法、决策或约束是否值得继续纵向深入，是 Agent 基于轻量调查索引、最近 Answer 和预期信息价值做的即时判断，不持久化为 reasoning 状态。Project 是一级切片边界，Report field 是项目内的焦点；只追加原话线索和已接受 Decision 的线索引用；跟进与未展开状态派生，不复制 Lead/Probe 路由状态。
 
 ## 当前输入边界
 
