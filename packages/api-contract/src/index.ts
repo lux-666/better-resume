@@ -1,3 +1,5 @@
+import { ReportNarrativeSchema } from "./narrative.ts";
+import { DepthLevelSchema, DispositionSchema, LeadSchema, FieldConclusionSchema, ProjectedLeadSchema } from "./investigation.ts";
 import { Type, type Static } from "typebox";
 import type { InterviewProgress, InterviewState, InterviewStep } from "../../interview-core/src/index.ts";
 
@@ -6,6 +8,7 @@ const ClaimSchema = Type.Object({
   source: Type.Union([Type.Literal("resume"), Type.Literal("candidate_input"), Type.Literal("candidate_answer")]),
   text: Type.String(),
   sourceQuote: Type.Optional(Type.String()),
+  sourceEvidenceId: Type.Optional(Type.String()),
   projectId: Type.Optional(Type.String()),
   status: Type.Union([
     Type.Literal("unverified"), Type.Literal("supported"),
@@ -94,6 +97,7 @@ const ReportFieldSchema = Type.Object({
 }, { additionalProperties: false });
 
 const ReportContradictionSchema = Type.Object({
+  kind: Type.Optional(Type.Union([Type.Literal("claim"), Type.Literal("cross_project")])),
   id: Type.String(),
   claimId: Type.String(),
   projectId: Type.Optional(Type.String()),
@@ -110,6 +114,9 @@ const CandidateReportSchema = Type.Object({
 }, { additionalProperties: false });
 
 const InterviewTurnSchema = Type.Object({
+  kind: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("supplement")])),
+  targetDepth: Type.Optional(DepthLevelSchema),
+  disposition: Type.Optional(DispositionSchema),
   id: Type.String(),
   index: Type.Integer({ minimum: 0 }),
   projectId: Type.Optional(Type.String()),
@@ -121,6 +128,7 @@ const InterviewTurnSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const EvidenceSchema = Type.Object({
+  depthLevel: Type.Optional(DepthLevelSchema),
   id: Type.String(),
   turnId: Type.String(),
   projectId: Type.Optional(Type.String()),
@@ -161,10 +169,11 @@ const StepExecutionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewActionSchema = Type.Union([
-  Type.Literal("ASK_CANDIDATE"), Type.Literal("FINISH_INTERVIEW"),
+  Type.Literal("ASK_CANDIDATE"), Type.Literal("FINISH_INTERVIEW"), Type.Literal("CLARIFY_QUESTION"), Type.Literal("RECORD_SUPPLEMENT"),
 ]);
 
 const DecisionTraceSchema = Type.Object({
+  targetDepth: Type.Optional(DepthLevelSchema), followsLeadId: Type.Optional(Type.String()), transition: Type.Optional(Type.String()), clarification: Type.Optional(Type.String()),
   turnId: Type.Optional(Type.String()),
   action: InterviewActionSchema,
   targetFieldId: Type.Optional(Type.String()),
@@ -176,6 +185,10 @@ const DecisionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStateSchema = Type.Object({
+  phaseVersion: Type.Optional(Type.Literal(3)),
+  leads: Type.Optional(Type.Array(LeadSchema)),
+  currentTransition: Type.Optional(Type.String()), currentClarification: Type.Optional(Type.String()),
+  clarifications: Type.Optional(Type.Array(Type.Object({ id: Type.String(), question: Type.String(), request: Type.String(), response: Type.String(), timestamp: Type.String() }))),
   sessionId: Type.String(),
   roleId: Type.String(),
   role: InterviewRoleSchema,
@@ -192,6 +205,7 @@ export const InterviewStateSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewDecisionSchema = Type.Object({
+  targetDepth: Type.Optional(DepthLevelSchema), followsLeadId: Type.Optional(Type.String()), transition: Type.Optional(Type.String()), clarification: Type.Optional(Type.String()),
   action: InterviewActionSchema,
   targetFieldId: Type.Optional(Type.String()),
   reason: Type.String(),
@@ -205,11 +219,14 @@ export const CreateInterviewBodySchema = Type.Object({
 }, { additionalProperties: false });
 
 export const AnswerCommandSchema = Type.Object({
+  intent: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("clarify"), Type.Literal("skip")])),
   commandId: Type.String({ minLength: 1, maxLength: 128 }),
   questionId: Type.String({ minLength: 1, maxLength: 128 }),
   expectedStateVersion: Type.Integer({ minimum: 0 }),
   answer: Type.String({ minLength: 1, maxLength: 10_000 }),
 }, { additionalProperties: false });
+
+export const SupplementCommandSchema = Type.Object({ ...AnswerCommandSchema.properties, projectId: Type.String({ minLength: 1 }) }, { additionalProperties: false });
 
 export const ApiErrorSchema = Type.Object({
   code: Type.Union([
@@ -240,6 +257,7 @@ export const InterviewProgressSchema = Type.Object({
 }, { additionalProperties: false });
 
 const CandidateReportEvidenceReferenceSchema = Type.Object({
+  depthLevel: Type.Optional(DepthLevelSchema),
   evidenceId: Type.String(),
   turnId: Type.String(),
   question: Type.String(),
@@ -252,6 +270,7 @@ const CandidateReportEvidenceReferenceSchema = Type.Object({
 }, { additionalProperties: false });
 
 const CandidateReportFieldOutputSchema = Type.Object({
+  detail: FieldConclusionSchema,
   fieldId: Type.String(),
   name: Type.String(),
   description: Type.String(),
@@ -287,6 +306,13 @@ const CandidateReportGapSchema = Type.Object({
 }, { additionalProperties: false });
 
 const CandidateReportArtifactSchema = Type.Object({
+  leads: Type.Array(ProjectedLeadSchema),
+  competencies: Type.Array(Type.Object({ competencyId: Type.String(), name: Type.String(), evidenceStrengthIndex: Type.Union([Type.Number(), Type.Null()]),
+    confidence: Type.Number(), evidenceIds: Type.Array(Type.String()), reachedDepth: Type.Optional(DepthLevelSchema),
+    statusCounts: Type.Object({ supported: Type.Integer(), weak: Type.Integer(), contradicted: Type.Integer(), missing: Type.Integer() }),
+  }, { additionalProperties: false })),
+  narrativeStatus: Type.Optional(Type.Union([Type.Literal("not_requested"), Type.Literal("pending"), Type.Literal("ready"), Type.Literal("failed")])),
+  narrativeSourceVersion: Type.Optional(Type.Integer({ minimum: 0 })), narrative: Type.Optional(ReportNarrativeSchema),
   schemaVersion: Type.Literal("candidate-report-v0.1"),
   sessionId: Type.String(),
   generatedAt: Type.String(),
@@ -354,6 +380,7 @@ export const InterviewStateResponseSchema = Type.Object({
   progress: InterviewProgressSchema,
   questionId: Type.Optional(Type.String({ minLength: 1 })),
   pendingCommand: Type.Optional(AnswerCommandSchema),
+  pendingSupplement: Type.Optional(SupplementCommandSchema),
 }, { additionalProperties: false });
 
 export const InterviewStepResponseSchema = Type.Object({
@@ -381,6 +408,7 @@ export interface InterviewStateResponse {
   progress: InterviewProgress;
   questionId?: string;
   pendingCommand?: AnswerCommand;
+  pendingSupplement?: AnswerCommand & { projectId: string };
 }
 
 export interface InterviewStepResponse extends InterviewStateResponse {

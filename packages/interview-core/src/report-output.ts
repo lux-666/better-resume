@@ -1,3 +1,6 @@
+import { fieldConclusion, projectLeads } from "./investigation.ts";
+import type { DepthLevel } from "./types.ts";
+import type { ReportNarrative, NarrativeStatus } from "./narrative-schema.ts";
 import type {
   Evidence,
   InterviewState,
@@ -5,6 +8,7 @@ import type {
 } from "./index.ts";
 
 export interface CandidateReportEvidenceReference {
+  depthLevel?: DepthLevel;
   evidenceId: string;
   turnId: string;
   question: string;
@@ -17,6 +21,7 @@ export interface CandidateReportEvidenceReference {
 }
 
 export interface CandidateReportFieldOutput {
+  detail: ReturnType<typeof fieldConclusion>;
   fieldId: string;
   name: string;
   description: string;
@@ -46,6 +51,12 @@ export interface CandidateReportGap {
 }
 
 export interface CandidateReportArtifact {
+  leads: ReturnType<typeof projectLeads>;
+  competencies: Array<{ competencyId: string; name: string; evidenceStrengthIndex: number | null; confidence: number; evidenceIds: string[];
+    statusCounts: Record<ReportField["status"], number>; reachedDepth?: DepthLevel }>;
+  narrativeStatus?: NarrativeStatus;
+  narrativeSourceVersion?: number;
+  narrative?: ReportNarrative;
   schemaVersion: "candidate-report-v0.1";
   sessionId: string;
   generatedAt: string;
@@ -105,8 +116,12 @@ function recommendation(field: ReportField, projectName: string, hasOpenContradi
     : `复核“${projectName}”的“${field.name}”更正结果，把已确认的实际贡献与原始候选人输入分开记录。`;
 }
 
-function conclusion(field: ReportField): string {
-  if (field.summary) return field.summary;
+function conclusion(field: ReportField, state: InterviewState): string {
+  const detail = fieldConclusion(state, field.id);
+  const statements = [...detail.supportStatements.map((text) => `支持：${text}`), ...detail.weaknessStatements.map((text) => `待核实：${text}`), ...detail.invalidateStatements.map((text) => `更正或冲突：${text}`)];
+  if (detail.reachedDepth) statements.push(`已展示到第 ${detail.reachedDepth} 层`);
+  if (detail.boundaryReason) statements.push(`第 ${detail.boundaryReason.depthLevel} 层尚未展开，不能据此推断能力上限`);
+  if (statements.length) return statements.join("；");
   if (field.status === "missing") return "尚未获得足够信息，不能形成正面或负面能力结论。";
   if (field.status === "weak") return "已有相关回答，但具体性、可验证性或可信度不足。";
   if (field.status === "contradicted") return "候选人回答与已有信息存在冲突，尚未形成稳定结论。";
@@ -204,7 +219,8 @@ export function buildCandidateReportArtifact(
         name: field.name,
         description: field.description,
         status: field.status,
-        conclusion: conclusion(field),
+        conclusion: conclusion(field, state),
+        detail: fieldConclusion(state, field.id),
         evidence: field.evidenceIds.flatMap((evidenceId) => {
           const item = evidence.get(evidenceId);
           const turn = item && turns.get(item.turnId);
@@ -218,6 +234,7 @@ export function buildCandidateReportArtifact(
             strength: item.strength,
             specificity: item.specificity,
             evaluatorConfidence: item.evaluatorConfidence,
+            depthLevel: item.depthLevel,
           }] : [];
         }),
         ...(nextRecommendation ? { recommendation: nextRecommendation } : {}),
@@ -253,6 +270,16 @@ export function buildCandidateReportArtifact(
   const recommendationValue = reportRecommendation(summary);
   const integrityErrors = validateReportIntegrity(state);
   return {
+    leads: projectLeads(state),
+    competencies: state.role.competencies.map((competency) => {
+      const fields = state.report.fields.filter((field) => field.competencyId === competency.id);
+      const current = state.competencies.find((item) => item.competencyId === competency.id);
+      const depths = fields.flatMap((field) => fieldConclusion(state, field.id).reachedDepth ?? []);
+      return { competencyId: competency.id, name: competency.name, evidenceStrengthIndex: current?.score ?? null, confidence: current?.confidence ?? 0,
+        evidenceIds: current?.evidenceIds ?? [], statusCounts: { supported: fields.filter((field) => field.status === "supported").length,
+          weak: fields.filter((field) => field.status === "weak").length, contradicted: fields.filter((field) => field.status === "contradicted").length,
+          missing: fields.filter((field) => field.status === "missing").length }, reachedDepth: depths.length ? Math.max(...depths) as DepthLevel : undefined };
+    }),
     schemaVersion: "candidate-report-v0.1",
     sessionId: state.sessionId,
     generatedAt,
@@ -388,6 +415,10 @@ export function renderInterviewReportMarkdown(report: CandidateReportArtifact): 
       if (field.recommendation) lines.push("", `核验建议：${escapeMarkdown(field.recommendation)}`);
     }
   }
+  lines.push("", "## 未展开线索", "");
+  for (const lead of report.leads.filter((item) => item.status === "dropped")) lines.push(`- ${escapeMarkdown(lead.text)}（原话来源 Turn ${lead.turnId}）`);
+  lines.push("", "## 证据强度指数", "", "指数描述本次证据强度，不是候选人能力总分。", "");
+  for (const competency of report.competencies) lines.push(`- ${escapeMarkdown(competency.name)}：${competency.evidenceStrengthIndex ?? "未知"}；置信度 ${competency.confidence.toFixed(2)}；已展示层级 ${competency.reachedDepth ?? "未知"}`);
   lines.push("", "## 矛盾记录", "");
   if (report.contradictions.length === 0) lines.push("本次面试未记录候选人陈述矛盾。");
   for (const item of report.contradictions) {

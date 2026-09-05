@@ -1,225 +1,7 @@
-export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW";
-
-export interface Claim {
-  id: string;
-  source: "resume" | "candidate_input" | "candidate_answer";
-  text: string;
-  sourceQuote?: string;
-  projectId?: string;
-  status: "unverified" | "supported" | "weakened" | "contradicted";
-  relatedCompetencies: string[];
-  supportingEvidenceIds: string[];
-  weakEvidenceIds: string[];
-  contradictingEvidenceIds: string[];
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
-  candidateRole?: string;
-  technologies: string[];
-  outcomes: string[];
-  claims: Claim[];
-  mappedCompetencies: string[];
-  roleRelevance?: number;
-}
-
-export interface CandidateProfile {
-  id: string;
-  name: string;
-  education: string[];
-  experiences: string[];
-  projects: Project[];
-  skills: string[];
-  claims: Claim[];
-}
-
-export interface RoleCompetency {
-  id: string;
-  name: string;
-  weight: number;
-  core: boolean;
-}
-
-export interface InterviewRole {
-  id: string;
-  name: string;
-  source: "generic" | "job_description" | "legacy_role";
-  description: string;
-  requirements: string[];
-  competencies: RoleCompetency[];
-}
-
-export interface CandidateProjectIntake {
-  name: string;
-  description: string;
-}
-
-export interface CandidateIntake {
-  name: string;
-  skills: string[];
-  projects: CandidateProjectIntake[];
-}
-
-export interface InterviewIntake {
-  candidate: CandidateIntake;
-  job?: {
-    title: string;
-    introduction: string;
-    responsibilities: string;
-    requirements: string;
-  };
-}
-
-export type ReportFieldStatus = "missing" | "weak" | "supported" | "contradicted";
-
-export interface ReportField {
-  id: string;
-  projectId: string;
-  competencyId: string;
-  name: string;
-  description: string;
-  importance: number;
-  status: ReportFieldStatus;
-  summary?: string;
-  evidenceIds: string[];
-}
-
-export interface ReportContradiction {
-  id: string;
-  claimId: string;
-  projectId?: string;
-  status: "open" | "resolved";
-  evidenceIds: string[];
-  resolutionEvidenceIds: string[];
-}
-
-export interface CandidateReport {
-  objective: string;
-  status: "in_progress" | "complete";
-  fields: ReportField[];
-  contradictions: ReportContradiction[];
-}
-
-export interface InterviewTurn {
-  id: string;
-  index: number;
-  projectId?: string;
-  reportFieldId?: string;
-  acknowledgement?: string;
-  question: string;
-  answer: string;
-  timestamp: string;
-}
-
-export interface Evidence {
-  id: string;
-  turnId: string;
-  projectId?: string;
-  reportFieldIds: string[];
-  claimIds: string[];
-  competencyId: string;
-  statement: string;
-  polarity: "support" | "weakness" | "invalidate";
-  strength: number;
-  specificity: number;
-  evaluatorConfidence: number;
-  sourceQuote: string;
-}
-
-export type EvidenceProposal = Omit<Evidence, "id" | "turnId" | "projectId">;
-export type AnswerDisposition = "substantive" | "vague" | "denial" | "contradiction" | "irrelevant";
-
-export interface CompetencyState {
-  competencyId: string;
-  score?: number;
-  confidence: number;
-  evidenceIds: string[];
-  missingEvidence: string[];
-  contradictoryEvidence: string[];
-}
-
-export interface TaskExecutionTrace {
-  source: "demo" | "llm";
-  durationMs: number;
-  retryCount: number;
-}
-
-export interface StepExecutionTrace {
-  mode: "demo" | "llm";
-  provider?: string;
-  modelId?: string;
-  reportModelId?: string;
-  interviewModelId?: string;
-  evidence?: TaskExecutionTrace;
-  question?: TaskExecutionTrace;
-}
-
-export interface DecisionTrace {
-  turnId?: string;
-  action: InterviewAction;
-  targetFieldId?: string;
-  reason: string;
-  acknowledgement?: string;
-  generatedQuestion?: string;
-  completionBlockers?: string[];
-  execution?: StepExecutionTrace;
-}
-
-export interface InterviewProgress {
-  stage: "not_started" | "interviewing" | "completed";
-  coveragePercent: number;
-  turns: { completed: number; max: number };
-  projects: { covered: number; total: number };
-  reportFields: { covered: number; total: number };
-  coreCompetencies: { covered: number; total: number };
-  contradictionsOpen: number;
-}
-
-export interface InterviewState {
-  sessionId: string;
-  roleId: string;
-  role: InterviewRole;
-  intake: InterviewIntake;
-  status: "draft" | "active" | "completed";
-  currentAcknowledgement?: string;
-  currentQuestion?: string;
-  candidate: CandidateProfile;
-  report: CandidateReport;
-  turns: InterviewTurn[];
-  evidence: Evidence[];
-  competencies: CompetencyState[];
-  traces: DecisionTrace[];
-}
-
-export interface InterviewDecision {
-  action: InterviewAction;
-  targetFieldId?: string;
-  reason: string;
-  acknowledgement?: string;
-  question?: string;
-}
-
-export interface InterviewStep {
-  state: InterviewState;
-  decision: InterviewDecision;
-  question?: string;
-  evidence: Evidence[];
-}
-
-export interface AnswerRecord {
-  state: InterviewState;
-  turn: InterviewTurn;
-  evidence: Evidence[];
-}
-
-export interface CompletionCheck {
-  allowed: boolean;
-  forced: boolean;
-  blockers: string[];
-}
-
+import type { InterviewAction, Claim, Project, CandidateProfile, RoleCompetency, InterviewRole, CandidateProjectIntake, CandidateIntake, InterviewIntake, ReportFieldStatus, ReportField, ReportContradiction, CandidateReport, InterviewTurn, Evidence, EvidenceProposal, AnswerDisposition, CompetencyState, TaskExecutionTrace, StepExecutionTrace, DecisionTrace, InterviewProgress, InterviewState, InterviewDecision, InterviewStep, AnswerRecord, CompletionCheck, DepthLevel, LeadProposal, Lead, Clarification } from "./types.ts";
+export type { InterviewAction, Claim, Project, CandidateProfile, RoleCompetency, InterviewRole, CandidateProjectIntake, CandidateIntake, InterviewIntake, ReportFieldStatus, ReportField, ReportContradiction, CandidateReport, InterviewTurn, Evidence, EvidenceProposal, AnswerDisposition, CompetencyState, TaskExecutionTrace, StepExecutionTrace, DecisionTrace, InterviewProgress, InterviewState, InterviewDecision, InterviewStep, AnswerRecord, CompletionCheck, DepthLevel, LeadProposal, Lead, Clarification } from "./types.ts";
+import { fieldConclusion, projectLeads, groundedAnswerClaims, prepareLeads, answerTurnCount } from "./investigation.ts";
+export { fieldConclusion, projectLeads, groundedAnswerClaims, answerTurnCount } from "./investigation.ts";
 export const HARD_MAX_TURNS = 15;
 
 const FIELD_KINDS = [
@@ -336,7 +118,7 @@ export function getInterviewProgress(
     stage: state.status === "draft" ? "not_started" : state.status === "completed" ? "completed" : "interviewing",
     coveragePercent: coverageTotal === 0 ? 0
       : Math.round((coveredFields + coveredCoreCompetencies) / coverageTotal * 100),
-    turns: { completed: state.turns.length, max: HARD_MAX_TURNS },
+    turns: { completed: answerTurnCount(state), max: HARD_MAX_TURNS },
     projects: {
       covered: state.candidate.projects.filter((project) =>
         state.evidence.some((evidence) => evidence.projectId === project.id)
@@ -447,30 +229,43 @@ export function recordAnswer(
   answer: string,
   proposedEvidence?: readonly EvidenceProposal[],
   disposition: AnswerDisposition = "substantive",
+  leadProposals: readonly LeadProposal[] = [],
+  supplementProjectId?: string,
 ): AnswerRecord {
-  if (state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
+  if (supplementProjectId ? state.status !== "completed" || state.turns.some((turn) => turn.kind === "supplement") : state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
   const text = answer.trim();
   if (!text) throw new Error("Answer cannot be empty");
-  const { project, field } = getActiveInterviewContext(state);
+  const context = supplementProjectId ? {
+    project: state.candidate.projects.find((project) => project.id === supplementProjectId),
+    field: state.report.fields.find((field) => field.projectId === supplementProjectId),
+  } : getActiveInterviewContext(state);
+  const { project, field } = context;
+  if (!project || !field) throw new Error("Unknown project");
   const turn: InterviewTurn = {
     id: globalThis.crypto.randomUUID(),
     index: state.turns.length,
     projectId: project.id,
-    reportFieldId: field.id,
+    reportFieldId: supplementProjectId ? undefined : field.id,
+    kind: supplementProjectId ? "supplement" : "answer",
+    disposition,
+    targetDepth: state.traces.at(-1)?.targetDepth,
     acknowledgement: state.currentAcknowledgement,
-    question: state.currentQuestion,
+    question: supplementProjectId ? "请补充与该项目相关的具体事实。" : state.currentQuestion!,
     answer: text,
     timestamp: new Date().toISOString(),
   };
 
   const proposals = proposedEvidence ?? [extractDemoEvidence(text, project, field)];
-  if (disposition === "irrelevant" && proposals.length > 0) {
+  if ((disposition === "irrelevant" || disposition === "question_back") && proposals.length > 0) {
     throw new Error("Irrelevant answers cannot produce evidence");
   }
-  const knownClaimIds = new Set([...project.claims, ...state.candidate.claims]
+  const answerClaims = groundedAnswerClaims(state, project.id);
+  const knownClaimIds = new Set([...project.claims, ...state.candidate.claims, ...answerClaims]
     .filter((claim) => !claim.projectId || claim.projectId === project.id)
     .map((claim) => claim.id));
   const evidence = proposals.map((proposal): Evidence => {
+    if (proposal.depthLevel !== undefined && (!Number.isInteger(proposal.depthLevel) || proposal.depthLevel < 1 || proposal.depthLevel > 5)) throw new Error("Invalid evidence depth");
+    if ((disposition === "vague" || disposition === "skip_request") && proposal.polarity !== "weakness") throw new Error("Vague/skip answers only provide weakness");
     if (!proposal.sourceQuote || !text.includes(proposal.sourceQuote)) {
       throw new Error("Evidence sourceQuote must be verbatim from the answer");
     }
@@ -488,6 +283,9 @@ export function recordAnswer(
       projectId: project.id,
     };
   });
+  const leads = prepareLeads(state, leadProposals, turn);
+  for (const claim of answerClaims) if (evidence.some((item) => item.claimIds.includes(claim.id)) && !state.candidate.claims.some((item) => item.id === claim.id)) state.candidate.claims.push(claim);
+  state.leads = [...(state.leads ?? []), ...leads];
   state.turns.push(turn);
   state.evidence.push(...evidence);
   for (const item of evidence) {
@@ -499,6 +297,8 @@ export function recordAnswer(
     updateCompetency(state, competencyId);
   }
   state.currentAcknowledgement = undefined;
+  state.currentTransition = undefined;
+  state.currentClarification = undefined;
   state.currentQuestion = undefined;
   return { state, turn, evidence };
 }
@@ -511,7 +311,8 @@ function updateReport(state: InterviewState, evidence: Evidence): void {
       throw new Error("Evidence competency does not match its report field");
     }
     field.evidenceIds.push(evidence.id);
-    field.summary = evidence.statement;
+    const conclusion = fieldConclusion(state, id);
+    field.summary = [...conclusion.supportStatements, ...conclusion.weaknessStatements, ...conclusion.invalidateStatements].join("；");
     field.status = evidence.polarity === "invalidate" ? "contradicted"
       : evidence.polarity === "support" && evidence.strength * evidence.specificity >= 0.45
         ? "supported" : "weak";
@@ -537,6 +338,7 @@ function updateContradictions(state: InterviewState, evidence: readonly Evidence
           const claim = allClaims(state).find((candidate) => candidate.id === claimId);
           state.report.contradictions.push({
             id: `contradiction:${claimId}`,
+            kind: claim?.sourceEvidenceId ? "cross_project" : "claim",
             claimId,
             projectId: claim?.projectId,
             status: "open",
@@ -596,23 +398,38 @@ function updateCompetency(state: InterviewState, competencyId: string): void {
 }
 
 export function validateCompletion(state: InterviewState): CompletionCheck {
-  if (state.turns.length >= HARD_MAX_TURNS) return { allowed: true, forced: true, blockers: [] };
+  if (answerTurnCount(state) >= HARD_MAX_TURNS) return { allowed: true, forced: true, blockers: [], blockerCodes: [] };
   const blockers = state.report.fields
     .filter((field) => field.importance >= 0.8 && field.status === "missing")
     .map((field) => `${field.id}: ${field.description}`);
+  const blockerCodes = blockers.map(() => "required_field_missing");
   for (const project of state.candidate.projects) {
     if (!state.report.fields.some((field) => field.projectId === project.id && field.evidenceIds.length > 0)) {
       blockers.push(`${project.id}: core project has no candidate evidence`);
+      blockerCodes.push("project_evidence_missing");
+    }
+  }
+  if (state.phaseVersion === 3) {
+    for (const project of state.candidate.projects) {
+      const explored = state.report.fields.filter((field) => field.projectId === project.id).map((field) => fieldConclusion(state, field.id));
+      if (!explored.some((field) => (field.reachedDepth ?? 0) >= 3 || field.boundaryReason)) {
+        blockers.push(`${project.id}: depth or grounded boundary required`);
+        blockerCodes.push("depth_or_boundary_missing");
+      }
     }
   }
   for (const contradiction of state.report.contradictions.filter((item) => item.status === "open")) {
     blockers.push(`${contradiction.id}: unresolved contradiction`);
+    blockerCodes.push("contradiction_unresolved");
   }
   for (const evidence of state.evidence) {
     const turn = state.turns.find((item) => item.id === evidence.turnId);
-    if (!turn?.answer.includes(evidence.sourceQuote)) blockers.push(`${evidence.id}: ungrounded evidence`);
+    if (!turn?.answer.includes(evidence.sourceQuote)) {
+      blockers.push(`${evidence.id}: ungrounded evidence`);
+      blockerCodes.push("evidence_ungrounded");
+    }
   }
-  return { allowed: blockers.length === 0, forced: false, blockers };
+  return { allowed: blockers.length === 0, forced: false, blockers, blockerCodes };
 }
 
 export function validateCandidateQuestion(question: string, acknowledgement?: string): void {
@@ -629,10 +446,10 @@ export function validateCandidateQuestion(question: string, acknowledgement?: st
     throw new Error("Question output must request exactly one fact");
   }
   const output = `${acknowledgement ?? ""}\n${question}`;
-  if (/rubric|policy|target.?gap|probe|评分|得分|证据缺口|能力模型/i.test(output)) {
+  if (/rubric|policy|target.?gap|probe|评分|得分|证据|字段|维度|report|evidence|能力模型|记录为|按.{0,8}处理|暂按|标记|归档/i.test(output)) {
     throw new Error("Question output reveals internal evaluation context");
   }
-  if (/非常棒|很棒|很好|优秀|厉害|显然|这证明|由此可见|你确实/.test(output)) {
+  if (/非常棒|很棒|很好|优秀|厉害|显然|这证明|由此可见|你确实|不错|可以看出/.test(output)) {
     throw new Error("Question output contains evaluative praise or presupposition");
   }
   if (/[?？]/.test(acknowledgement ?? "")) throw new Error("Acknowledgement cannot contain a question");
@@ -644,8 +461,15 @@ export function applyInterviewDecision(
   turnId?: string,
 ): InterviewStep {
   if (state.status !== "active") throw new Error("Interview is not active");
+  if (decision.action === "CLARIFY_QUESTION") {
+    if (!state.currentQuestion || !decision.clarification) throw new Error("Clarification requires an active question");
+    validateCandidateAside(decision.clarification);
+    state.currentClarification = decision.clarification;
+    state.traces.push({ ...decision, generatedQuestion: state.currentQuestion });
+    return { state, decision, question: state.currentQuestion, evidence: [] };
+  }
   const completion = validateCompletion(state);
-  const effective = state.turns.length >= HARD_MAX_TURNS
+  const effective = answerTurnCount(state) >= HARD_MAX_TURNS
     ? { action: "FINISH_INTERVIEW", reason: "Hard turn limit reached." } satisfies InterviewDecision
     : decision;
   if (effective.action === "FINISH_INTERVIEW") {
@@ -658,14 +482,26 @@ export function applyInterviewDecision(
     const field = state.report.fields.find((item) => item.id === effective.targetFieldId);
     if (!field || !effective.question) throw new Error("ask_candidate requires a known report field and question");
     validateCandidateQuestion(effective.question, effective.acknowledgement);
+    if (effective.transition) validateCandidateAside(effective.transition);
+    if (effective.targetDepth !== undefined && (!Number.isInteger(effective.targetDepth) || effective.targetDepth < 1 || effective.targetDepth > 5)) throw new Error("Invalid target depth");
+    if (state.turns.some((turn) => turn.reportFieldId === field.id && turn.disposition === "skip_request")) throw new Error("Candidate skipped this field");
+    if (effective.followsLeadId) {
+      const lead = projectLeads(state).find((item) => item.id === effective.followsLeadId);
+      if (!lead || lead.status !== "open" || lead.projectId !== field.projectId) throw new Error("Lead must be open and belong to the target project");
+    }
     if (state.turns.some((turn) => normalizeQuestion(turn.question) === normalizeQuestion(effective.question!))) {
       throw new Error("Question repeats an earlier question");
     }
     state.currentAcknowledgement = effective.acknowledgement;
+    state.currentTransition = effective.transition;
+    state.currentClarification = undefined;
     state.currentQuestion = effective.question;
   }
   state.traces.push({
     turnId,
+    targetDepth: effective.targetDepth,
+    followsLeadId: effective.followsLeadId,
+    transition: effective.transition,
     action: effective.action,
     targetFieldId: effective.targetFieldId,
     reason: effective.reason,
@@ -699,15 +535,22 @@ export function getDemoInterviewDecision(state: InterviewState): InterviewDecisi
     field.projectId === openContradiction.projectId && field.status === "contradicted"
   );
   const projects = state.candidate.projects.toSorted((left, right) => projectValue(right) - projectValue(left));
+  const needsDepth = state.phaseVersion === 3 ? state.report.fields.find((field) => {
+    const projectFields = state.report.fields.filter((item) => item.projectId === field.projectId);
+    return !projectFields.some((item) => { const conclusion = fieldConclusion(state, item.id); return (conclusion.reachedDepth ?? 0) >= 3 || conclusion.boundaryReason; });
+  }) : undefined;
   const field = contradictionField ?? projects.flatMap((project) => state.report.fields
     .filter((item) => item.projectId === project.id && item.status === "missing")
-    .toSorted((left, right) => right.importance - left.importance))[0];
+    .toSorted((left, right) => right.importance - left.importance))[0] ?? needsDepth;
   if (!field) return { action: "FINISH_INTERVIEW", reason: "The Candidate Report has no completion blockers." };
   return {
     action: "ASK_CANDIDATE",
     targetFieldId: field.id,
     reason: openContradiction ? "Clarify an unresolved contradiction." : field.description,
-    question: demoQuestion(state, field, Boolean(openContradiction)),
+    targetDepth: state.phaseVersion === 3 ? Math.min(5, (fieldConclusion(state, field.id).reachedDepth ?? 0) + 1) as DepthLevel : undefined,
+    question: state.phaseVersion === 3 && state.turns.some((turn) => turn.reportFieldId === field.id)
+      ? `关于“${state.candidate.projects.find((project) => project.id === field.projectId)!.name}”，你第 ${answerTurnCount(state) + 1} 次补充想说明的选择依据是什么？`
+      : demoQuestion(state, field, Boolean(openContradiction)),
   };
 }
 
@@ -761,5 +604,19 @@ function extractDemoEvidence(answer: string, project: Project, field: ReportFiel
     specificity: vague ? Math.max(0.3, specificity) : Math.max(0.7, specificity),
     evaluatorConfidence: 0.7,
     sourceQuote: answer,
+    depthLevel: vague ? 3 : /因为|依据|对照|定位|因此|比较/.test(answer) ? 3 : /\d|逐条|接收.*核对|三步|先.{1,15}再/.test(answer) ? 2 : 1,
   };
+}
+
+export function validateCandidateAside(text: string): void {
+  validateCandidateQuestion("你想补充什么？", text);
+}
+export function recordClarification(state: InterviewState, request: string, response: string): InterviewStep {
+  if (state.status !== "active" || !state.currentQuestion) throw new Error("No question to clarify");
+  if ((state.clarifications ?? []).some((item) => item.question === state.currentQuestion)) throw new Error("Only one clarification per question");
+  validateCandidateAside(response);
+  state.clarifications = [...(state.clarifications ?? []), { id: globalThis.crypto.randomUUID(), question: state.currentQuestion, request,
+    response, timestamp: new Date().toISOString() }];
+  return applyInterviewDecision(state, { action: "CLARIFY_QUESTION", reason: "Candidate requested clarification", clarification: response,
+    targetFieldId: state.traces.at(-1)?.targetFieldId, targetDepth: state.traces.at(-1)?.targetDepth });
 }

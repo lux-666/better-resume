@@ -2,7 +2,10 @@
   "name": "better-resume",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:server": "node --env-file-if-exists=.env --watch --import tsx apps/server/src/index.ts",
@@ -13,9 +16,12 @@
     "eval:routing:report-replay": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-report-replay.ts",
     "build": "npm run typecheck && npm run build -w @better-resume/web",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test apps/server/src/index.test.ts apps/server/src/evaluation-gates.test.ts apps/server/src/frozen-report-cases.test.ts apps/server/src/model-runtime.test.ts apps/server/src/routing-matrix.test.ts apps/web/src/intake-parser.test.ts packages/api-contract/src/index.test.ts packages/interview-core/src/index.test.ts packages/interview-core/src/intake.test.ts packages/interview-core/src/report-output.test.ts packages/interview-core/src/fixed-profiles.test.ts packages/pi-runtime/src/index.test.ts docs/architecture/structure.test.mjs"
+    "test": "node --import tsx --test apps/*/src/*.test.ts packages/*/src/*.test.ts docs/architecture/structure.test.mjs",
+    "eval:phase3": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-phase3.ts"
   },
-  "engines": { "node": ">=22.19" },
+  "engines": {
+    "node": ">=22.19"
+  },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
