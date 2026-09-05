@@ -11,6 +11,7 @@
 - `read_report → edit_report → ask_candidate / finish_interview` Agent 主链
 - Evidence 原话校验、重要报告字段覆盖、矛盾检查、单问题约束和 15 轮硬上限
 - 客观、完整、可追溯并包含招聘建议的 Candidate Report JSON/Markdown 下载
+- 面试官知识 RAG：20 张可追溯卡片、独立 embedding 配置、本地 SQLite 向量检索、知识引用与技术视图
 - 强、弱、矛盾三类固定 Profile
 
 ## 文档导航
@@ -39,6 +40,23 @@ npm run dev
 LLM_REPORT_MODEL=gpt-5.6-terra
 LLM_INTERVIEW_MODEL=gpt-5.6-sol
 ```
+
+可选启用面试官知识检索（应用与数据库在本机，模型仍调用配置的 API）：
+
+```dotenv
+LLM_EMBEDDING_MODEL=qwen3.7-text-embedding-flash
+LLM_EMBEDDING_BASE_URL=https://your-embedding-provider.example/v1
+LLM_EMBEDDING_API_KEY=your-key
+```
+
+embedding URL/Key 未单独填写时使用 `LLM_BASE_URL` / `LLM_API_KEY`。模型名需要匹配你的 Provider。重启后自动索引 [20 张知识卡片](knowledge/README.md)；无 embedding 配置或索引失败时继续使用静态追问策略，健康接口与技术视图明确显示状态。Demo 模式不调用 Interview Agent 检索工具。
+
+```bash
+npm run eval:knowledge
+npm run eval:knowledge:questions
+```
+
+应用数据默认保存在 `data/better-resume.db`，由 `DATABASE_PATH` 切换。Session 已持久化；完整历史列表和用户删除/导出入口按 [Task 4.4](docs/phase/phase4/task-4.4-productization.md) 实现，不需要账户或登录验证码。
 
 真实模型固定 Profile：
 

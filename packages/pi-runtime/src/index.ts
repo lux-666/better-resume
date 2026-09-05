@@ -1,4 +1,5 @@
 import { playbookFor } from "./playbooks.ts";
+import { KnowledgeQuerySchema, type ProbeKnowledge } from "./knowledge.ts";
 import { DepthLevelSchema, DispositionSchema, LeadProposalSchema } from "../../api-contract/src/investigation.ts";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
@@ -54,6 +55,7 @@ const Phase3ReportEditSchema = Type.Object({ ...ReportEditSchema.properties,
 }, { additionalProperties: false });
 
 export const AskCandidateSchema = Type.Object({
+  knowledgeIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 6, uniqueItems: true })),
   targetDepth: Type.Optional(DepthLevelSchema),
   followsLeadId: Type.Optional(Type.String()),
   transition: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
@@ -238,7 +240,7 @@ function interviewFocusProjectId(state: InterviewState): string {
   return nextField?.projectId ?? state.candidate.projects[0]?.id ?? "";
 }
 
-export function buildInterviewAgentView(state: InterviewState): unknown {
+export function buildInterviewAgentView(state: InterviewState, knowledge?: ProbeKnowledge): unknown {
   const focusedProjectId = interviewFocusProjectId(state);
   const focusedProject = state.candidate.projects.find((project) => project.id === focusedProjectId);
   return {
@@ -262,7 +264,8 @@ export function buildInterviewAgentView(state: InterviewState): unknown {
       claims: relevantProjectClaims(state, focusedProject.id).map(({ id, text, status }) => ({ id, text, status })),
     },
     openLeads: projectLeads(state).filter((lead) => lead.status === "open").slice(-12),
-    playbook: playbookFor(state),
+    knowledge: knowledge?.health() ?? { status: "unconfigured", count: 0 },
+    ...(knowledge?.health().status === "ready" ? {} : { playbook: playbookFor(state) }),
     projectIndex: state.candidate.projects.map((project) => ({
       id: project.id,
       name: project.name,
@@ -416,18 +419,45 @@ export async function decideNextStepWithAgent(options: {
   telemetry?: TelemetryCollector;
   signal?: AbortSignal;
   attempt?: number;
+  knowledge?: ProbeKnowledge;
+  retrievalBudget?: { remaining: number };
 }): Promise<InterviewDecision> {
   let reportRead = false;
   let accepted: InterviewDecision | undefined;
   let rejectedFinishes = 0;
   let validationFailures = 0;
+  const budget = options.retrievalBudget ?? { remaining: 2 };
+  const retrieved = new Set<string>();
+  const retrievalSpans = new Set<string>();
   const readReport = readContextTool({
     name: "read_report",
     label: "Read Interview Plan",
     description: "Read the compact cross-project field index and focused-project details without full evidence history.",
-    view: buildInterviewAgentView(options.state),
+    view: buildInterviewAgentView(options.state, options.knowledge),
     onRead: () => { reportRead = true; },
   });
+  const retrieveKnowledge: AgentTool = {
+    name: "retrieve_probe_knowledge", label: "Retrieve Probe Knowledge",
+    description: "Retrieve up to three interview probes for a mechanism, metric or decision. Use only to formulate questions, never as candidate facts. At most twice per turn.",
+    parameters: KnowledgeQuerySchema,
+    execute: async (_id, value) => {
+      if (!reportRead) throw new EvidenceValidationError("Read the report before retrieving knowledge");
+      if (!Check(KnowledgeQuerySchema, value) || !value.query.trim()) throw new EvidenceValidationError("Knowledge query is invalid");
+      if (budget.remaining <= 0) return { content: [{ type: "text", text: JSON.stringify({ status: "limit_reached", playbook: playbookFor(options.state) }) }], details: {} };
+      budget.remaining--;
+      const previous = options.telemetry?.trace.spans.length ?? 0;
+      try {
+        if (!options.knowledge) throw new Error("Knowledge is not configured");
+        const hits = await options.knowledge.retrieve(value, { telemetry: options.telemetry, signal: options.signal });
+        for (const hit of hits) retrieved.add(hit.id);
+        for (const span of options.telemetry?.trace.spans.slice(previous) ?? []) if (span.kind === "retrieval") retrievalSpans.add(span.spanId);
+        return { content: [{ type: "text", text: JSON.stringify({ status: "ready", hits }) }], details: {} };
+      } catch {
+        options.signal?.throwIfAborted();
+        return { content: [{ type: "text", text: JSON.stringify({ status: "unavailable", fallback: "static_playbook", playbook: playbookFor(options.state) }) }], details: {} };
+      }
+    },
+  };
   const askCandidate: AgentTool = {
     name: "ask_candidate",
     label: "Ask Candidate",
@@ -437,6 +467,7 @@ export async function decideNextStepWithAgent(options: {
       if (!Check(AskCandidateSchema, value)) throw new EvidenceValidationError("ask_candidate input is invalid");
       const normalized = normalizeQuestionOutput(value);
       if (!reportRead) throw new EvidenceValidationError("Read the report before asking the candidate");
+      if (normalized.knowledgeIds?.some((id) => !retrieved.has(id))) throw new EvidenceValidationError("Knowledge citation was not retrieved in this attempt");
       if (!options.state.report.fields.some((field) => field.id === normalized.targetFieldId)) {
         throw new EvidenceValidationError("Question targets an unknown report field");
       }
@@ -461,6 +492,7 @@ export async function decideNextStepWithAgent(options: {
         normalizeQuestion(turn.question) === normalizeQuestion(normalized.question)
       )) throw new EvidenceValidationError("Question repeats an earlier question");
       accepted = { action: "ASK_CANDIDATE", ...normalized };
+      options.telemetry?.referenceKnowledge(normalized.knowledgeIds ?? [], retrievalSpans);
       return { content: [{ type: "text", text: "Question accepted." }], details: {}, terminate: true };
     },
   };
@@ -488,13 +520,15 @@ export async function decideNextStepWithAgent(options: {
   const agent = createAgent({
     model: options.model,
     streamFn: options.streamFn,
-    tools: [readReport, askCandidate, finishInterview],
+    tools: [readReport, ...(options.knowledge ? [retrieveKnowledge] : []), askCandidate, finishInterview],
     prompt: [
       "You are a professional, restrained peer interviewer. Be curious and specific, use plain Chinese, never praise, judge, or narrate internal record keeping. Do not say 记录为、按不确定处理、证据、字段、维度、Report、Evidence.",
       "Your goal is a credible Candidate Report that identifies the depth demonstrated and the limits observed, not filling boxes. Progress along statement/detail/rationale/tradeoff/transfer. Pick one focused request; never demand all levels at once.",
       "Set targetDepth for each question. Prefer a relevant open lead and record followsLeadId only when this question actually follows it. Never follow the same lead twice. After two vague attempts at a level, change topic; reaching level 5 does not require further escalation.",
       "Use a short neutral transition when changing projects. Acknowledgement and transition contain no question or assessment. Missing/weak support is not proof of lack of ability.",
       "First call read_report. Then choose the single most valuable investigation step.",
+      "If knowledge is ready and the candidate mentions a concrete mechanism, metric or decision, explicitly call retrieve_probe_knowledge before asking. Build its query yourself from their words or your investigation intent. fieldKind is ownership/mechanism/measurement/failure; targetDepth is optional. At most two retrieval calls per turn.",
+      "Knowledge is a reference for question construction only, never candidate evidence or an assumption about their work. Do not use 通常应该 or 标准做法是. Record only retrieved IDs actually used in ask_candidate.knowledgeIds. If retrieval is unavailable or fails, use the returned static playbook and continue without inventing knowledge citations.",
       "Ground the question in the current role, candidate skills, focused project, and prior answers; never assume a default job, seniority, employer, education, or technology stack.",
       "When role.source is generic, do not evaluate against an unstated Job Description.",
       "Use ask_candidate to investigate missing or weak evidence, unresolved contradictions, or a specific valuable clue from the latest answer.",

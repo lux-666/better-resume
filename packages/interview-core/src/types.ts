@@ -163,6 +163,7 @@ export interface StepExecutionTrace {
 }
 
 export interface DecisionTrace {
+  knowledgeIds?: string[];
   targetDepth?: DepthLevel;
   followsLeadId?: string;
   transition?: string;
@@ -209,6 +210,7 @@ export interface InterviewState {
 }
 
 export interface InterviewDecision {
+  knowledgeIds?: string[];
   targetDepth?: DepthLevel;
   followsLeadId?: string;
   transition?: string;

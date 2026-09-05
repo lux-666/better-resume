@@ -173,6 +173,7 @@ export const InterviewActionSchema = Type.Union([
 ]);
 
 const DecisionTraceSchema = Type.Object({
+  knowledgeIds: Type.Optional(Type.Array(Type.String(), { uniqueItems: true, maxItems: 6 })),
   targetDepth: Type.Optional(DepthLevelSchema), followsLeadId: Type.Optional(Type.String()), transition: Type.Optional(Type.String()), clarification: Type.Optional(Type.String()),
   turnId: Type.Optional(Type.String()),
   action: InterviewActionSchema,
@@ -205,6 +206,7 @@ export const InterviewStateSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewDecisionSchema = Type.Object({
+  knowledgeIds: Type.Optional(Type.Array(Type.String(), { uniqueItems: true, maxItems: 6 })),
   targetDepth: Type.Optional(DepthLevelSchema), followsLeadId: Type.Optional(Type.String()), transition: Type.Optional(Type.String()), clarification: Type.Optional(Type.String()),
   action: InterviewActionSchema,
   targetFieldId: Type.Optional(Type.String()),

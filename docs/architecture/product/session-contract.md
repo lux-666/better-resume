@@ -5,7 +5,8 @@
 ## HTTP API
 
 ```text
-GET  /api/health
+GET  /api/health                         # 包含 knowledge 状态
+POST /api/knowledge/search                # {query, fieldKind?, targetDepth?}
 POST /api/interviews
 POST /api/interviews/:id/start
 POST /api/interviews/:id/answer
@@ -47,3 +48,12 @@ validate command
 ## 观测
 
 每个 DecisionTrace 记录 action、targetFieldId、reason、问题和 Evidence/Decision 模型调用的来源、延迟与重试数。独立 telemetry_traces 已保存执行与失败 Span。Phase 3 补齐生命周期、实时进度、统一聚合与恢复；遥测独立于业务 State，业务提交才决定执行成功。
+
+
+## 本地知识索引
+
+应用从 GitHub 下载后在本机运行，不引入联网服务账户。已有 Session 数据持续存入 SQLite；历史列表/删除入口属于 Phase 4.4。
+
+`knowledge_chunks` 保存可重建的公共知识卡片、来源、元数据、内容哈希、embedding 模型指纹及 Float64 BLOB。启动后台索引期间或失败时提供静态追问策略，健康接口区分 unconfigured/indexing/ready/failed。只有完整索引事务提交后才可检索；失败不影响 Session 或已接受 Evidence。
+
+技术视图同时显示当前索引状态和所选执行的历史 retrieval/embedding Span。命中快照保存在 Trace；知识 ID 引用保存在已接受 Decision 中，后续卡片变更不改变旧 Trace 的命中文本。

@@ -501,6 +501,7 @@ export function applyInterviewDecision(
     turnId,
     targetDepth: effective.targetDepth,
     followsLeadId: effective.followsLeadId,
+    knowledgeIds: effective.knowledgeIds,
     transition: effective.transition,
     action: effective.action,
     targetFieldId: effective.targetFieldId,

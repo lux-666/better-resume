@@ -30,6 +30,12 @@ export class TelemetryCollector {
     for (const span of this.trace.spans) span.turnId = turnId;
     this.publish();
   }
+  referenceKnowledge(ids: string[], spanIds: ReadonlySet<string>): void {
+    for (const span of this.trace.spans) if (span.retrieval && spanIds.has(span.spanId)) {
+      span.retrieval.referencedIds = ids.filter((id) => span.retrieval!.hits.some((hit) => hit.id === id));
+    }
+    this.publish();
+  }
   start(operation: string, kind: TelemetrySpan["kind"], parentSpanId?: string, details: Partial<TelemetrySpan> = {}): TelemetrySpan {
     if (this.trace.status !== "running") throw new Error("Cannot start a span on a settled trace");
     const span: TelemetrySpan = { ...details,

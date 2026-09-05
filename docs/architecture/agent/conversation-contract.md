@@ -21,6 +21,7 @@ answer:
 
 - `read_report`：工具名保持不变，但视图按 consumer 切分。两个视图都包含当前 Session 的 Role 来源；Report Agent 只读取当前 Project 的描述、Claim、Report field、grounded Evidence 和相关矛盾；Interview Agent 额外读取候选人技能、全局轻量字段索引和当前焦点 Project 描述，不包含姓名、全量 Evidence 历史和 `sourceQuote`。旧 Project 上的角色、技术和成果字段不进入两个 Agent 投影。
 - `edit_report`：提交本轮 Answer 的结构化 Evidence edit；模型不能直接改 State。
+- `retrieve_probe_knowledge`：Interview Agent 主动构造查询，按字段类型/深度检索最多三张公共知识卡；每轮最多两次，预算跨 Provider 重试共享。失败返回静态策略，不进入 Report Agent 上下文。
 - `ask_candidate`：选择一个 Report field，并提交一个候选人可见问题。
 - `finish_interview`：请求结束；Completion Validator 可返回 blockers，Agent 随后必须继续调查。
 
@@ -71,3 +72,10 @@ LLM 模式没有 `Gap → Lead → Probe → Question` 调度器。某个具体�
 ## 上下文与持久化
 
 InterviewState 是唯一权威状态。模型上下文每次从 Report、Turns 和 Evidence 重建；不保存第二份模型记忆。Report Agent 获得当前 Project 的完整 Evidence 切片，Interview Agent 只获得跨 Project 的轻量索引与一个焦点 Project，两个投影不共用同一个大对象。Answer Command 在 Provider 调用前持久化，成功的 Report edit 与下一 Decision 原子提交。
+
+
+## 知识与 Evidence 边界
+
+检索结果只提供追问角度，不能成为关于候选人的事实假设。`ask_candidate.knowledgeIds` 仅能引用当前尝试真正命中的卡片；接受后记录到 DecisionTrace，并标记 retrieval Span 的引用关系。检索查询由 Agent 显式提供，不在系统中按候选人内容自动生成。
+
+Report Agent 不获得知识卡片或检索工具。其 Evidence 仍必须有当前 Answer 的原文来源，不能把题库内容复制成候选人回答；共享术语本身不构成污染，是否忠实描述回答仍由原有事实与报告质量约束检查。

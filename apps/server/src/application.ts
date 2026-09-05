@@ -12,18 +12,32 @@ import { InterviewStore } from "./store.ts";
 import { TelemetryHub } from "./telemetry-hub.ts";
 import { InterviewExecution } from "./execution.ts";
 import { configuredRuntimes, type RuntimeSet } from "./configured-runtimes.ts";
-export function createApplication(options: { databasePath: string; runtimes?: RuntimeSet; leaseMs?: number; deadlineMs?: number }) {
+import { fileURLToPath } from "node:url";
+import { configuredEmbedding } from "./embedding.ts";
+import { KnowledgeQuerySchema } from "../../../packages/pi-runtime/src/knowledge.ts";
+import { KnowledgeStore } from "./knowledge-store.ts";
+export function createApplication(options: { databasePath: string; runtimes?: RuntimeSet; leaseMs?: number; deadlineMs?: number; knowledgeRoot?: string; embedding?: ReturnType<typeof configuredEmbedding> }) {
   const store = new InterviewStore(options.databasePath, options.leaseMs);
   store.recoverTelemetry();
   const hub = new TelemetryHub(store);
   const runtimes = options.runtimes ?? configuredRuntimes();
   const narratives = new NarrativeService(store, hub, runtimes.report, options.deadlineMs);
-  const execution = new InterviewExecution(store, hub, runtimes, options.deadlineMs ?? Math.min(90_000, store.leaseMs * .75));
+  const knowledge = new KnowledgeStore(store.database, options.embedding ?? (options.runtimes ? undefined : configuredEmbedding()));
+  const indexingAbort = new AbortController();
+  const ready = knowledge.index(options.knowledgeRoot ?? fileURLToPath(new URL("../../../knowledge", import.meta.url)), indexingAbort.signal)
+    .catch(() => { console.error("Knowledge indexing failed; static playbook is active. Check knowledge files and embedding configuration."); });
+  const execution = new InterviewExecution(store, hub, runtimes, options.deadlineMs ?? Math.min(90_000, store.leaseMs * .75), knowledge);
   const server = createServer(async (request, response) => {
     try {
       const method = request.method ?? "GET";
       const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-      if (method === "GET" && pathname === "/api/health") return json(response, 200, { ok: true, runtime: runtimes.info });
+      if (method === "GET" && pathname === "/api/health") return json(response, 200, { ok: true, runtime: runtimes.info, knowledge: knowledge.health() });
+      if (method === "POST" && pathname === "/api/knowledge/search") {
+        const body = await readJson(request);
+        if (!Check(KnowledgeQuerySchema, body) || !body.query.trim()) throw new HttpError(400, "INVALID_REQUEST", "Knowledge query is invalid");
+        try { return json(response, 200, { hits: await knowledge.retrieve(body) }); }
+        catch { throw new HttpError(503, "PROVIDER_UNAVAILABLE", "Knowledge retrieval unavailable; static playbook is active", true); }
+      }
       if (method === "GET" && pathname === "/api/demo-profiles") return json(response, 200, demoProfiles());
       const replayMatch = pathname.match(/^\/api\/demo-replays\/([\w-]+)$/);
       if (method === "GET" && replayMatch) { const replay = demoReplay(replayMatch[1]); if (!replay) throw new HttpError(404, "NOT_FOUND", "Replay not available"); return json(response, 200, replay); }
@@ -68,7 +82,7 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
         if (action === "state") return json(response, 200, execution.response(state));
         if (action === "report") { narratives.ensure(state); return json(response, 200, narratives.bundle(state)); }
         if (action === "traces") return json(response, 200, hub.traces(state.sessionId));
-        if (action === "telemetry") { const traces = hub.traces(state.sessionId); return json(response, 200, { traces, summary: summarizeTelemetry(traces) }); }
+        if (action === "telemetry") { const traces = hub.traces(state.sessionId); return json(response, 200, { traces, summary: summarizeTelemetry(traces), knowledge: knowledge.health() }); }
         if (action === "progress") return json(response, 200, hub.progress(state.sessionId));
         if (action === "events") return hub.connect(state.sessionId, response);
       }
@@ -82,5 +96,5 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
       json(response, failure.status, { code: failure.code, message: failure.message, retryable: failure.retryable });
     }
   });
-  return { server, store, hub, execution, narratives, close: async () => { hub.close(); await narratives.close(); server.close(); store.close(); } };
+  return { server, store, hub, execution, narratives, knowledge, ready, close: async () => { indexingAbort.abort(); await ready; hub.close(); await narratives.close(); server.close(); store.close(); } };
 }

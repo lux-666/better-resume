@@ -1,0 +1,182 @@
+[
+  {
+    "id": "q01",
+    "query": "为什么注意力分数要除以根号下的维度，位置又是怎么表示的",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q01-transformer"
+    ]
+  },
+  {
+    "id": "q02",
+    "query": "我们调高温度后回答变得不稳定，想比较累计概率截断和固定数量采样",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q02-temperature-top-p"
+    ]
+  },
+  {
+    "id": "q03",
+    "query": "自回归生成时复用之前的键和值，如何权衡显存与解码延迟",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q03-kv-cache"
+    ]
+  },
+  {
+    "id": "q04",
+    "query": "没有资料依据时模型仍然编造答案，如何定位并降低幻觉",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q04-hallucination"
+    ]
+  },
+  {
+    "id": "q05",
+    "query": "中文被拆得很碎导致 token 成本变高，字节对编码是怎样合并词元的",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q05-tokenization-bpe"
+    ]
+  },
+  {
+    "id": "q06",
+    "query": "让模型写出中间推理步骤为什么会改善多步计算，零样本和示例推理有什么差异",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q06-chain-of-thought"
+    ]
+  },
+  {
+    "id": "q07",
+    "query": "我们的智能体反复思考、调用工具、观察结果，然后决定下一步",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q07-react"
+    ]
+  },
+  {
+    "id": "q08",
+    "query": "用户把忽略先前规则写进了输入，怎么阻止提示词注入越过权限边界",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q08-prompt-injection"
+    ]
+  },
+  {
+    "id": "q09",
+    "query": "提示中放几个示例辅助分类，怎样挑选和排列少样本示例",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q09-few-shot"
+    ]
+  },
+  {
+    "id": "q10",
+    "query": "知识库做了文档切块、混合检索再重排，想定位 RAG 链路的优化环节",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q10-rag-stack"
+    ]
+  },
+  {
+    "id": "q11",
+    "query": "向量索引在图搜索和倒排聚类之间选型，召回与延迟如何权衡",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q11-hnsw-ivf"
+    ]
+  },
+  {
+    "id": "q12",
+    "query": "用 RAGAS 衡量答案忠实度、相关性和检索上下文质量",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q12-ragas"
+    ]
+  },
+  {
+    "id": "q13",
+    "query": "我们用 LangGraph 把工作流写成状态图，希望支持循环和分支",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q13-langgraph"
+    ]
+  },
+  {
+    "id": "q14",
+    "query": "模型通过结构化函数参数选择外部工具，如何定义 schema 和调度调用",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q14-function-calling"
+    ]
+  },
+  {
+    "id": "q15",
+    "query": "智能体如何区别短期对话记忆与可持久化的长期记忆",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q15-agent-memory"
+    ]
+  },
+  {
+    "id": "q16",
+    "query": "多个智能体按编排器和工作者分工，或者通过流水线协作，该如何选",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q16-multi-agent-patterns"
+    ]
+  },
+  {
+    "id": "q17",
+    "query": "任务重试可能重复执行工具，多智能体的状态一致性与幂等如何保证",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q17-consistency-idempotency"
+    ]
+  },
+  {
+    "id": "q18",
+    "query": "我们通过 SSE 流式返回生成内容，工具调用过程的事件应该怎么处理",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q18-streaming"
+    ]
+  },
+  {
+    "id": "q19",
+    "query": "重复请求都有相同的很长提示前缀，怎样用 prompt caching 降低费用和延迟",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q19-prompt-caching"
+    ]
+  },
+  {
+    "id": "q20",
+    "query": "Agent 输出不确定，怎样设计单测、集成测试和回归评估来防止退化",
+    "fieldKind": "mechanism",
+    "targetDepth": 3,
+    "expectedIds": [
+      "interview-bagu-ai-agent-q20-agent-testing"
+    ]
+  }
+]

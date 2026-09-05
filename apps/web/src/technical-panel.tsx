@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import type { TelemetryTrace } from "../../../packages/api-contract/src/telemetry.ts";
+import type { KnowledgeStatus, TelemetryTrace } from "../../../packages/api-contract/src/telemetry.ts";
 import { summarizeTelemetry, type Measurement } from "../../../packages/api-contract/src/telemetry-summary.ts";
 import { request } from "./api.ts";
 import { projectLeads, type InterviewState } from "../../../packages/interview-core/src/index.ts";
-type Data = { traces: TelemetryTrace[]; summary: ReturnType<typeof summarizeTelemetry> };
+type Data = { traces: TelemetryTrace[]; summary: ReturnType<typeof summarizeTelemetry>; knowledge?: KnowledgeStatus };
 const measurement = (value: Measurement) => value.value === null ? "不可用" : `${value.value.toLocaleString()}${value.availability === "partial" ? "（部分）" : ""}`;
 export function TechnicalPanel({ state, version }: { state: InterviewState; version: number }) {
   const sessionId = state.sessionId;
@@ -27,6 +27,7 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
   const decision = trace?.turnId ? state.traces.find((item) => item.turnId === trace.turnId) : state.traces.at(-1);
   return <section className="technical-panel" aria-label="技术视图">
     <h3>Session 运行统计</h3>
+    {data.knowledge && <p>当前知识索引：{{ unconfigured: "未配置，使用静态策略", indexing: "正在索引，暂用静态策略", ready: "可检索", failed: "索引失败，使用静态策略" }[data.knowledge.status]} · {data.knowledge.count} 张卡片{data.knowledge.model ? ` · ${data.knowledge.model}` : ""}</p>}
     <p>线索：{leads.filter((lead) => lead.status === "open").length} 待跟进 · {leads.filter((lead) => lead.status === "followed").length} 已跟进 · {leads.filter((lead) => lead.status === "dropped").length} 未展开</p>
     <dl className="progress-grid">
       <div><dt>执行 / 已提交轮次</dt><dd>{summary.traceCount} / {summary.completedTurns}</dd></div>
@@ -45,17 +46,27 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
     {trace && <><code>{trace.traceId}</code><p>状态：{trace.status ?? "历史记录"} · 总耗时 {(Math.max(total, 0) / 1000).toFixed(1)}s</p>
       {decision && <details><summary>已提交 Decision · {decision.action}</summary>
         <p>目标字段：{decision.targetFieldId ?? "—"} · 目标层级：{decision.targetDepth ?? "—"}</p>
+        <p>知识引用：{decision.knowledgeIds?.join("、") || "无"}</p>
         <p>{decision.reason}</p><p>跟进线索：{leads.find((lead) => lead.id === decision.followsLeadId)?.text ?? "—"}</p>
       </details>}
       <div className="span-list">{trace.spans.map((span) => {
         const start = Math.max(0, Date.parse(span.startedAt) - Date.parse(trace.startedAt));
         const duration = span.durationMs ?? Math.max(0, Date.now() - Date.parse(span.startedAt));
         return <details className={`span-row ${span.parentSpanId ? "child" : ""}`} key={span.spanId}>
-          <summary><span>{span.toolName ?? span.operation}{span.attempt ? ` · 尝试 ${span.attempt}` : ""}</span><small>{span.status ?? "历史"} · {(duration / 1000).toFixed(2)}s</small></summary>
+          <summary><span>{span.kind === "retrieval" ? "知识检索" : span.kind === "embedding" ? "查询向量化" : span.toolName ?? span.operation}{span.attempt ? ` · 尝试 ${span.attempt}` : ""}</span><small>{span.status ?? "历史"} · {(duration / 1000).toFixed(2)}s</small></summary>
           <div className="span-track"><i style={{ marginLeft: `${Math.min(100, start / Math.max(1, total) * 100)}%`, width: `${Math.min(100, Math.max(.5, duration / Math.max(1, total) * 100))}%` }} /></div>
           <p>{span.provider} {span.responseModel ?? span.model}</p>
           {span.kind === "model" && <p>输入 {span.usage?.input ?? "不可用"} · 输出 {span.usage?.output ?? "不可用"} · 首响应 {span.firstResponseMs === undefined ? "不可用" : `${span.firstResponseMs}ms`} · 上下文 {span.context?.bytes ?? "—"} bytes</p>}
           {span.kind === "tool" && <p>工具结果体积：{span.resultBytes ?? "不可用"} bytes</p>}
+          {span.retrieval && <section aria-label="知识检索">
+            <p>查询：{span.retrieval.query}</p>
+            <p>过滤：{span.retrieval.fieldKind ?? "全部字段"} · 层级 {span.retrieval.targetDepth ?? "全部"} · 本地检索 {span.retrieval.localDurationMs?.toFixed(2) ?? "—"}ms</p>
+            {span.retrieval.fallback && <p>检索不可用，已回退静态追问策略。</p>}
+            {span.retrieval.hits.map((hit) => <details key={hit.id}><summary>{hit.id} · 相似度 {hit.score.toFixed(3)} · {span.retrieval!.referencedIds.includes(hit.id) ? "已引用" : "未引用"}</summary>
+              <p>{hit.sourcePath}</p><pre style={{ whiteSpace: "pre-wrap" }}>{hit.text}</pre>
+            </details>)}
+            {!span.retrieval.hits.length && !span.retrieval.fallback && <p>没有匹配的知识卡片。</p>}
+          </section>}
           {span.error && <p className="error">{span.error.message}</p>}
           {span.outcome === "rejected" && <p>校验拒绝：{span.blockerCodes?.join("、") ?? "工具校验未通过"}</p>}
         </details>;

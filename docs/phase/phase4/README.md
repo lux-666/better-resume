@@ -2,7 +2,7 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：Planned。前置条件：Phase 3 退出标准达成。**
+**状态：In progress（先交付 4.1 的 20 题试用批次）。**
 
 ## 业务目标
 
@@ -23,10 +23,10 @@ Phase 4 结束后，文档才允许声称系统结合了 RAG 与长文本记忆�
 
 | Task | 状态 | 依赖 | 交付结果 |
 | --- | --- | --- | --- |
-| [4.1 面试官知识 RAG](task-4.1-interviewer-knowledge-rag.md) | Planned | 3.1 | 策略库与能力词典索引、`retrieve_probe_knowledge` 工具、命中追踪与准确率评测 |
+| [4.1 面试官知识 RAG](task-4.1-interviewer-knowledge-rag.md) | In progress：20 题试用 | 3.1 | 策略库与能力词典索引、`retrieve_probe_knowledge` 工具、命中追踪与准确率评测 |
 | [4.2 长文本记忆](task-4.2-long-context-memory.md) | Planned | 3.1 | 滚动摘要、对话与 Evidence 语义索引、`recall` 工具、15 轮长程 Profile |
 | [4.3 Role Pack 与简历全文](task-4.3-role-pack-and-resume.md) | Planned | 4.1 | JD 逐条要求映射、按岗位生成调查字段、可选简历全文索引、岗位匹配矩阵 |
-| [4.4 产品化与稳定性](task-4.4-productization.md) | Planned | 4.1–4.3 | 备用模型降级、账户与 Session 归属、并发与延迟指标、发布 Gate |
+| [4.4 产品化与稳定性](task-4.4-productization.md) | Planned | 4.1–4.3 | 本地历史 Session、保留/导出/删除、备用模型降级、故障恢复与本机发布验收 |
 
 执行顺序：
 

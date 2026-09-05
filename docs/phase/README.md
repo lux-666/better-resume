@@ -8,7 +8,7 @@
 | [Phase 1.5](phase1.5/README.md) | In progress | 已实现 Trace、Evaluation 和获准上线的模型分工，真实基线继续积累 |
 | [Phase 2](phase2/README.md) | Completed | 真实输入、上下文解耦、候选人评估报告和真实模型发布 Gate 已完成 |
 | [Phase 3](phase3/README.md) | Planned | 能力深度探测、报告叙述、面试官拟人化与路演就绪 |
-| [Phase 4](phase4/README.md) | Planned | 面试官知识 RAG、长文本记忆、JD 逐条映射与产品化 |
+| [Phase 4](phase4/README.md) | In progress：4.1 的 20 题试用 | 面试官知识 RAG、长文本记忆、JD 逐条映射与产品化 |
 
 Phase 2 已形成可发布的本地 Demo 闭环。技术能力只按真实运行链路记录，不为评分虚报 RAG 或长期记忆；Phase 4 交付真实的检索与记忆链路后，文档才允许声称这两项能力。
 

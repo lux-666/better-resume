@@ -23,7 +23,7 @@ export function summarizeTelemetry(traces: readonly TelemetryTrace[]) {
     activeCount: traces.filter((trace) => trace.status === "running").length,
     failedCount: traces.filter((trace) => ["failed", "timed_out", "interrupted"].includes(trace.status ?? "")).length,
     spanCount: spans.length,
-    spansByKind: Object.fromEntries(["agent", "model", "tool", "state"].map((kind) => [kind, spans.filter((span) => span.kind === kind).length])),
+    spansByKind: Object.fromEntries(["agent", "model", "tool", "state", "retrieval", "embedding"].map((kind) => [kind, spans.filter((span) => span.kind === kind).length])),
     modelRequestCount: models.length,
     providerRetryCount: spans.filter((span) => span.kind === "agent" && (span.attempt ?? 1) > 1).length,
     toolRejectionCount: spans.filter((span) => span.kind === "tool" && (span.status === "failed" || span.outcome === "rejected")).length,

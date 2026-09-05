@@ -5,7 +5,12 @@ const statuses = Type.Union([Type.Literal("running"), Type.Literal("succeeded"),
 export const TelemetrySpanSchema = Type.Object({
   traceId: Type.String(), spanId: Type.String(), parentSpanId: Type.Optional(Type.String()),
   sessionId: Type.Optional(Type.String()), commandId: Type.Optional(Type.String()), turnId: Type.Optional(Type.String()),
-  kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state")]),
+  kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state"), Type.Literal("retrieval"), Type.Literal("embedding")]),
+  retrieval: Type.Optional(Type.Object({
+    query: Type.String(), fieldKind: Type.Optional(Type.String()), targetDepth: Type.Optional(Type.Number()),
+    hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), sourcePath: Type.String() })),
+    referencedIds: Type.Array(Type.String()), localDurationMs: optionalNumber(), fallback: Type.Optional(Type.Literal("static_playbook")),
+  }, { additionalProperties: false })),
   operation: Type.String(), startedAt: Type.String(), endedAt: Type.Optional(Type.String()),
   status: Type.Optional(statuses), durationMs: optionalNumber(), firstResponseMs: optionalNumber(),
   attempt: optionalNumber(), retryCount: optionalNumber(),
@@ -27,6 +32,7 @@ export const TelemetryTraceSchema = Type.Object({
 }, { additionalProperties: false });
 export type TelemetrySpan = Static<typeof TelemetrySpanSchema>;
 export type TelemetryTrace = Static<typeof TelemetryTraceSchema>;
+export type KnowledgeStatus = { status: "unconfigured" | "indexing" | "ready" | "failed"; count: number; model?: string; reason?: string };
 export type RunStatus = "running" | "succeeded" | "failed" | "timed_out" | "interrupted";
 export type Stage = "received" | "report" | "interview" | "saving" | "narrative";
 export const RunProgressSchema = Type.Object({

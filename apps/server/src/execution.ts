@@ -8,12 +8,13 @@ import { questionId, stateVersion } from "./session.ts";
 import type { InterviewStore } from "./store.ts";
 import type { TelemetryHub } from "./telemetry-hub.ts";
 import type { RuntimeSet } from "./configured-runtimes.ts";
+import type { ProbeKnowledge } from "../../../packages/pi-runtime/src/knowledge.ts";
 export class ExecutionTimeoutError extends HttpError {
   constructor() { super(503, "PROVIDER_UNAVAILABLE", "本次处理超时，回答已保留，可以重试。", true); }
 }
 export class InterviewExecution {
   private readonly starts = new Set<string>();
-  constructor(readonly store: InterviewStore, readonly hub: TelemetryHub, readonly runtimes: RuntimeSet, readonly deadlineMs: number) {
+  constructor(readonly store: InterviewStore, readonly hub: TelemetryHub, readonly runtimes: RuntimeSet, readonly deadlineMs: number, readonly knowledge?: ProbeKnowledge) {
     if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || deadlineMs >= store.leaseMs) throw new Error("Execution deadline must be positive and shorter than command lease");
   }
   response(state: InterviewState, pending = true): InterviewStateResponse {
@@ -56,8 +57,9 @@ export class InterviewExecution {
       return { step, trace: { source: "demo" as const, durationMs: span.durationMs ?? 0, retryCount: 0 } };
     }
     const runtime = this.runtimes.interview;
+    const retrievalBudget = { remaining: 2 };
     const result = await this.modelCall(collector, signal, "interview_agent", (attempt) => decideNextStepWithAgent({
-      model: runtime.model!, streamFn: runtime.streamFn!, state, telemetry: collector, signal, attempt,
+      model: runtime.model!, streamFn: runtime.streamFn!, state, telemetry: collector, signal, attempt, knowledge: this.knowledge, retrievalBudget,
     }));
     return { step: this.stateChange(collector, "apply_decision", () => applyInterviewDecision(state, result.value, turnId)), trace: result.trace };
   }
