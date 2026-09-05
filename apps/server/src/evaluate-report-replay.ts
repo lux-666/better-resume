@@ -57,14 +57,16 @@ for (const modelId of [weakModelId, strongModelId]) {
   const comparisons: ReplayComparison[] = [];
   for (const item of cases) {
     const telemetry = new TelemetryCollector({ sessionId: item.state.sessionId });
+    let attempt = 1;
     try {
       const edit = await withOneProviderRetry(() => editReportWithAgent({
         model: runtime.model!,
         streamFn: runtime.streamFn!,
         state: structuredClone(item.state),
         answer: item.answer,
-        telemetry,
-      }));
+        telemetry, attempt,
+      }), () => { attempt += 1; });
+      telemetry.end("succeeded");
       comparisons.push({
         caseId: item.id,
         fixtureFingerprint: item.fixtureFingerprint,
@@ -82,6 +84,7 @@ for (const modelId of [weakModelId, strongModelId]) {
         telemetry: telemetry.trace,
       });
     } catch (error) {
+      telemetry.end("failed");
       comparisons.push({
         caseId: item.id,
         fixtureFingerprint: item.fixtureFingerprint,

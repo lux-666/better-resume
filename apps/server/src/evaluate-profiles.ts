@@ -124,6 +124,7 @@ class ProfileEvaluationError extends Error {
     readonly retryCount: number,
     readonly completedTurns: EvaluationTurn[],
     readonly original: unknown,
+    readonly telemetry: TelemetryTrace[],
   ) {
     super(original instanceof Error ? original.message : "Unknown evaluation error");
     this.name = "ProfileEvaluationError";
@@ -137,13 +138,15 @@ async function askOrFinish(
   telemetry: TelemetryCollector,
 ): Promise<string[][]> {
   const rejected: string[][] = [];
+  let attempt = 1;
   const decision = await withOneProviderRetry(() => decideNextStepWithAgent({
     model: interviewModel,
     streamFn: interviewStreamFn,
     state,
     telemetry,
+    attempt,
     onFinishRejected: (blockers) => rejected.push([...blockers]),
-  }), onRetry);
+  }), () => { attempt += 1; onRetry(); });
   applyInterviewDecision(state, decision, turnId);
   return rejected;
 }
@@ -160,21 +163,26 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
   );
   const turns: EvaluationTurn[] = [];
   const telemetry: TelemetryTrace[] = [];
+  let currentTelemetry: TelemetryCollector | undefined;
   let stage: EvaluationStage = "initial_decision";
   let answer: string | undefined;
   let stageRetryCount = 0;
   try {
     activateInterview(state);
     let pendingRetryCount = 0;
-    const initialTelemetry = new TelemetryCollector({ sessionId: state.sessionId });
+    const initialTelemetry = new TelemetryCollector({ sessionId: state.sessionId, operation: "evaluation_start" });
+    currentTelemetry = initialTelemetry;
+    telemetry.push(initialTelemetry.trace);
     let pendingRejectedFinishes = await askOrFinish(
       state, undefined, () => { pendingRetryCount += 1; }, initialTelemetry,
     );
-    telemetry.push(initialTelemetry.trace);
+    initialTelemetry.end("succeeded");
     while (state.status === "active") {
       const trace = state.traces.at(-1)!;
       const response = fixedProfileResponse(profile, state);
-      const turnTelemetry = new TelemetryCollector({ sessionId: state.sessionId });
+      const turnTelemetry = new TelemetryCollector({ sessionId: state.sessionId, operation: "evaluation_answer" });
+      currentTelemetry = turnTelemetry;
+      telemetry.push(turnTelemetry.trace);
       answer = response.answer;
       stage = "report_edit";
       stageRetryCount = 0;
@@ -184,8 +192,9 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
         state,
         answer: response.answer,
         telemetry: turnTelemetry,
+        attempt: stageRetryCount + 1,
       }), () => { stageRetryCount += 1; });
-      const record = recordAnswer(state, response.answer, edit.evidence, edit.answerDisposition);
+      const record = recordAnswer(state, response.answer, edit.evidence, edit.answerDisposition, edit.leads);
       turnTelemetry.trace.turnId = record.turn.id;
       for (const span of turnTelemetry.trace.spans) span.turnId ??= record.turn.id;
       const editRetryCount = stageRetryCount;
@@ -197,7 +206,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
         () => { stageRetryCount += 1; },
         turnTelemetry,
       );
-      telemetry.push(turnTelemetry.trace);
+      turnTelemetry.end("succeeded");
       turns.push({
         index: record.turn.index,
         retryCount: pendingRetryCount + editRetryCount + stageRetryCount,
@@ -215,6 +224,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
       answer = undefined;
     }
   } catch (error) {
+    currentTelemetry?.end("failed");
     throw new ProfileEvaluationError(
       profile,
       stage,
@@ -223,6 +233,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
       stageRetryCount,
       turns.slice(-1),
       error,
+      telemetry,
     );
   }
 
@@ -287,6 +298,7 @@ try {
   console.error(JSON.stringify({
     type: "evaluation_error",
     category,
+    telemetry: error instanceof ProfileEvaluationError ? error.telemetry : [],
     profile: error instanceof ProfileEvaluationError ? error.profile : undefined,
     stage: error instanceof ProfileEvaluationError ? error.stage : undefined,
     retryCount: error instanceof ProfileEvaluationError ? error.retryCount : undefined,

@@ -1,3 +1,4 @@
+import { summarizeTelemetry } from "../../../packages/api-contract/src/telemetry-summary.ts";
 import type { AnswerDisposition, EvidenceProposal, InterviewState } from "../../../packages/interview-core/src/index.ts";
 import type { TelemetryTrace } from "../../../packages/pi-runtime/src/index.ts";
 import type { EvaluationTurn, GateFailure } from "./evaluation-gates.ts";
@@ -19,14 +20,6 @@ function setCounts(expected: readonly string[], actual: readonly string[]) {
   return { matched, observed: observed.size, gold: gold.size };
 }
 
-function usageTotal(traces: readonly TelemetryTrace[], key: "input" | "output" | "reasoning" | "cacheRead" | "cacheWrite") {
-  const values = traces.flatMap((trace) => trace.spans)
-    .filter((span) => span.kind === "model")
-    .map((span) => span.usage?.[key])
-    .filter((value): value is number => typeof value === "number");
-  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
-}
-
 export function buildEvaluationScorecard(options: {
   profile: string;
   state: InterviewState;
@@ -35,6 +28,7 @@ export function buildEvaluationScorecard(options: {
   telemetry: readonly TelemetryTrace[];
 }) {
   const { profile, state, turns, failures, telemetry } = options;
+  const runtimeSummary = summarizeTelemetry(telemetry);
   const validTargets = new Set(state.report.fields.map((field) => field.id));
   const questions = turns.map((turn) => normalized(turn.question));
   const duplicateCount = questions.filter((question, index) => questions.indexOf(question) !== index).length;
@@ -126,12 +120,13 @@ export function buildEvaluationScorecard(options: {
     telemetry: {
       traces: telemetry.length,
       modelRequests: modelSpans.length,
-      modelLatencyMs: modelSpans.reduce((sum, span) => sum + (span.durationMs ?? 0), 0),
-      inputTokens: usageTotal(telemetry, "input"),
-      outputTokens: usageTotal(telemetry, "output"),
-      reasoningTokens: usageTotal(telemetry, "reasoning"),
-      cachedReadTokens: usageTotal(telemetry, "cacheRead"),
-      cachedWriteTokens: usageTotal(telemetry, "cacheWrite"),
+      modelLatencyMs: runtimeSummary.modelDurationSumMs.value,
+      summary: runtimeSummary,
+      inputTokens: runtimeSummary.inputTokens.availability === "complete" ? runtimeSummary.inputTokens.value : null,
+      outputTokens: runtimeSummary.outputTokens.availability === "complete" ? runtimeSummary.outputTokens.value : null,
+      reasoningTokens: runtimeSummary.reasoningTokens.availability === "complete" ? runtimeSummary.reasoningTokens.value : null,
+      cachedReadTokens: runtimeSummary.cacheReadTokens.availability === "complete" ? runtimeSummary.cacheReadTokens.value : null,
+      cachedWriteTokens: runtimeSummary.cacheWriteTokens.availability === "complete" ? runtimeSummary.cacheWriteTokens.value : null,
       maxApproximateContextTokens: modelSpans.length === 0 ? null
         : Math.max(...modelSpans.map((span) => span.context?.approximateInputTokens ?? 0)),
       errors: telemetry.flatMap((trace) => trace.spans).filter((span) => span.error).length,
