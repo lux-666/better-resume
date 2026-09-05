@@ -2,6 +2,8 @@
 
 [返回 Phase 3](README.md)
 
+**实现状态：Implemented。自动深度评测达到 83.3%；真实 boundary 档案需在 Provider 可用时复跑。**
+
 ## 目标
 
 让 Interview Agent 的调查目标从“把字段从 missing 变成非 missing”变成“沿一条固定的深度梯向上探测，直到候选人给不出更深一层的可验证内容”。报告据此写出能力边界，而不是只写有无证据。

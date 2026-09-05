@@ -68,6 +68,12 @@ async function runProfile(profile: DemoProfile, special?: "question_back" | "ski
       reportIntegrity: report.report.integrity.valid, reportContract: Check(InterviewReportResponseSchema, report),
       narrativeReady: report.report.narrativeStatus === "ready", uniqueQuestions: new Set(normalized).size === normalized.length,
       traceTerminal: traces.every((trace) => trace.status !== "running"),
+      noInternalQuestionText: current.state.traces.every((trace) => !/(记录为|按.{0,8}处理|证据|字段|维度|Report|Evidence|评分|得分)/i.test(`${trace.generatedQuestion ?? ""} ${trace.acknowledgement ?? ""} ${trace.transition ?? ""}`)),
+      noRepeatedLeadFollow: (() => {
+        const followed = current.state.traces.map((trace) => trace.followsLeadId).filter((id): id is string => Boolean(id));
+        return followed.length === new Set(followed).size;
+      })(),
+      narrativeVersionAligned: report.report.narrativeStatus === "ready" && report.report.narrativeSourceVersion === current.stateVersion,
       ...(profile.profile === "boundary" && !special ? { boundaryObserved: report.report.projects.some((p: any) => p.fields.some((f: any) => f.detail.boundaryReason?.depthLevel === 3)) } : {}),
       ...(special === "skip_request" ? { skipped: current.state.turns[0]?.disposition === "skip_request" } : {}),
     };
@@ -103,7 +109,8 @@ async function runDepth() {
       const edit = await withOneProviderRetry(() => editReportWithAgent({ model: runtimes.report.model!, streamFn: runtimes.report.streamFn!, state,
         answer: item.answer, telemetry, signal, attempt }), () => { attempt += 1; });
       const relevant = edit.evidence.filter((evidence) => evidence.reportFieldIds.includes(field.id));
-      const matched = relevant.length > 0 && relevant.every((evidence) => evidence.depthLevel === item.expectedDepthLevel);
+      const matched = relevant.length > 0 && relevant.every((evidence) => evidence.depthLevel === item.expectedDepthLevel)
+        && edit.answerDisposition === item.expectedDisposition;
       telemetry.end("succeeded"); comparisons.push({ ...item, matched, edit, telemetry: telemetry.trace });
       console.log(JSON.stringify({ type: "phase3_depth", id: item.id, matched }));
     } catch { telemetry.end(signal.aborted ? "timed_out" : "failed"); comparisons.push({ ...item, matched: false, error: "Report replay failed", telemetry: telemetry.trace }); }
