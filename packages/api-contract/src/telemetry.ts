@@ -10,7 +10,12 @@ export type KnowledgeSource = Static<typeof KnowledgeSourceSchema>;
 export const TelemetrySpanSchema = Type.Object({
   traceId: Type.String(), spanId: Type.String(), parentSpanId: Type.Optional(Type.String()),
   sessionId: Type.Optional(Type.String()), commandId: Type.Optional(Type.String()), turnId: Type.Optional(Type.String()),
-  kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state"), Type.Literal("retrieval"), Type.Literal("embedding")]),
+  kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state"), Type.Literal("retrieval"), Type.Literal("embedding"), Type.Literal("recall")]),
+  recall: Type.Optional(Type.Object({ query: Type.String(), scope: Type.String(), projectId: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()),
+    sourceStateVersion: Type.Number(), hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), projectId: Type.Optional(Type.String()), turnIndex: Type.Optional(Type.Number()), score: Type.Number() })),
+  })),
+  summary: Type.Optional(Type.Object({ version: Type.Number(), sourceStateVersion: Type.Number(), chars: Type.Number(), truncated: Type.Boolean() })),
+  fallback: Type.Optional(Type.Object({ fromModel: Type.String(), toModel: Type.String(), reason: Type.String(), adopted: Type.Boolean() })),
   retrieval: Type.Optional(Type.Object({
     query: Type.String(), fieldKind: Type.Optional(Type.String()), targetDepth: Type.Optional(Type.Number()),
     hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), sourcePath: Type.String(), source: Type.Optional(KnowledgeSourceSchema) })),

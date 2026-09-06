@@ -398,7 +398,7 @@ function updateCompetency(state: InterviewState, competencyId: string): void {
 }
 
 export function validateCompletion(state: InterviewState): CompletionCheck {
-  if (answerTurnCount(state) >= HARD_MAX_TURNS) return { allowed: true, forced: true, blockers: [], blockerCodes: [] };
+  if (answerTurnCount(state) >= HARD_MAX_TURNS || (state.startedAt && state.timeBudgetMinutes && Date.now() - Date.parse(state.startedAt) >= state.timeBudgetMinutes * 60_000)) return { allowed: true, forced: true, blockers: [], blockerCodes: [] };
   const blockers = state.report.fields
     .filter((field) => field.importance >= 0.8 && field.status === "missing")
     .map((field) => `${field.id}: ${field.description}`);

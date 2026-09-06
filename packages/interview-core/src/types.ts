@@ -1,3 +1,4 @@
+import type { InterviewSummary, RolePack } from "./phase4-schema.ts";
 export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW" | "CLARIFY_QUESTION" | "RECORD_SUPPLEMENT";
 
 export interface Claim {
@@ -76,6 +77,7 @@ export interface InterviewIntake {
 export type ReportFieldStatus = "missing" | "weak" | "supported" | "contradicted";
 
 export interface ReportField {
+  requirementIds?: string[];
   id: string;
   projectId: string;
   competencyId: string;
@@ -147,6 +149,8 @@ export interface CompetencyState {
 }
 
 export interface TaskExecutionTrace {
+  modelId?: string;
+  fallbackUsed?: boolean;
   source: "demo" | "llm";
   durationMs: number;
   retryCount: number;
@@ -189,6 +193,12 @@ export interface InterviewProgress {
 }
 
 export interface InterviewState {
+  memory?: { summary: InterviewSummary };
+  rolePack?: RolePack;
+  rolePackFailure?: string;
+  resumeIndexFailure?: string;
+  timeBudgetMinutes?: number;
+  startedAt?: string;
   phaseVersion?: 3;
   leads?: Lead[];
   clarifications?: Clarification[];

@@ -1,3 +1,4 @@
+import { runModelStage } from "./model-stage.ts";
 import type { InterviewState } from "../../../packages/interview-core/src/index.ts";
 import { buildInterviewReportBundle } from "../../../packages/interview-core/src/report-output.ts";
 import { demoNarrative, renderNarrativeMarkdown } from "../../../packages/interview-core/src/narrative.ts";
@@ -10,7 +11,7 @@ import { stateVersion } from "./session.ts";
 type Row = { state_version: number; status: NarrativeStatus; result: string | null; trace_id: string };
 export class NarrativeService {
   private readonly jobs = new Map<string, { version: number; abort: AbortController; promise: Promise<void> }>();
-  constructor(private readonly store: InterviewStore, private readonly hub: TelemetryHub, private readonly runtime: ModelRuntime, private readonly timeoutMs = 90_000) {}
+  constructor(private readonly store: InterviewStore, private readonly hub: TelemetryHub, private readonly runtime: ModelRuntime, private readonly timeoutMs = 90_000, private readonly fallback?: ModelRuntime) {}
   private row(id: string): Row | undefined { return this.store.database.prepare("SELECT * FROM report_narratives WHERE session_id=?").get(id) as Row | undefined; }
   ensure(state: InterviewState, retry = false): void {
     if (state.status !== "completed") return;
@@ -31,10 +32,9 @@ export class NarrativeService {
         if (this.runtime.mode === "demo") {
           const span = collector.start("narrative_agent", "agent", undefined, { attempt: 1 }); narrative = demoNarrative(report); collector.finish(span);
         } else {
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try { narrative = await generateNarrative({ model: this.runtime.model!, streamFn: this.runtime.streamFn!, report, telemetry: collector, signal: abort.signal, attempt }); break; }
-            catch (error) { abort.signal.throwIfAborted(); if (attempt === 2) throw error; }
-          }
+          narrative = (await runModelStage({ primary: this.runtime, fallback: this.fallback, telemetry: collector, signal: abort.signal, primaryTimeoutMs: this.timeoutMs * .5,
+            invoke: (runtime, attempt, signal) => generateNarrative({ model: runtime.model!, streamFn: runtime.streamFn!, report, telemetry: collector, signal, attempt }),
+          })).value;
         }
         abort.signal.throwIfAborted();
         const span = collector.start("persist_narrative", "state");
@@ -60,5 +60,6 @@ export class NarrativeService {
     }
     return bundle;
   }
+  async cancel(sessionId: string): Promise<void> { const job = this.jobs.get(sessionId); if (job) { job.abort.abort(new Error("Session deleted")); await job.promise; } }
   async close(): Promise<void> { for (const job of this.jobs.values()) job.abort.abort(); await Promise.all([...this.jobs.values()].map((job) => job.promise)); }
 }

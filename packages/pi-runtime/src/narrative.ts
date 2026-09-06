@@ -13,7 +13,7 @@ export async function generateNarrative(options: { model: Model<Api>; streamFn: 
   let accepted: ReportNarrative | undefined;
   let failures = 0;
   const agent = createObservedAgent({ ...options, operation: "narrative_agent",
-    prompt: `你为招聘方撰写克制、清晰的中文面试报告。先调用 read_report_artifact，再调用 submit_narrative。每句判断必须引用对应项目/能力已有的 evidenceIds；只根据这些原话改写，不增加事实、数字或推断。总体 2–4 句。能力 verdict 使用提供的固定值；boundary 说明实际展示的深度及未展开内容，不能把未验证当作能力不足。招聘方建议与候选人反馈分开。禁止录用、淘汰、薪资、等级、rubric、评分、得分等超出口径词。无证据的项目或能力只能用原句“${noEvidenceText}”和空引用。unexploredLeads 必须逐字复制 dropped 线索列表。只输出工具调用。`,
+    prompt: `你为招聘方撰写克制、清晰的中文面试报告。先调用 read_report_artifact，再调用 submit_narrative。每句判断必须引用对应项目/能力已有的 evidenceIds；只根据这些原话改写，不增加事实、数字或推断。总体 2–4 句。requirements 必须为 requirementMatrix 中每条 must 要求写一个 conclusion（只用该要求 evidenceIds），requirementId 和 status 原样复制，不得提升结论；无证据用固定无证据句。没有 must 时 requirements 为空数组。能力 verdict 使用提供的固定值；boundary 说明实际展示的深度及未展开内容，不能把未验证当作能力不足。招聘方建议与候选人反馈分开。禁止录用、淘汰、薪资、等级、rubric、评分、得分等超出口径词。无证据的项目或能力只能用原句“${noEvidenceText}”和空引用。unexploredLeads 必须逐字复制 dropped 线索列表。只输出工具调用。`,
     tools: [
       { name: "read_report_artifact", label: "Read grounded artifact", description: "Read report facts and allowed evidence references", parameters: Type.Object({}),
         execute: async () => { read = true; return { content: [{ type: "text", text: JSON.stringify({ report: options.report,

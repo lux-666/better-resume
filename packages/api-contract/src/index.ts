@@ -1,3 +1,4 @@
+import { SummarySchema, RolePackSchema, RequirementMatrixSchema } from "../../interview-core/src/phase4-schema.ts";
 import { ReportNarrativeSchema } from "./narrative.ts";
 import { DepthLevelSchema, DispositionSchema, LeadSchema, FieldConclusionSchema, ProjectedLeadSchema } from "./investigation.ts";
 import { Type, type Static } from "typebox";
@@ -82,6 +83,7 @@ const InterviewIntakeSchema = Type.Object({
 }, { additionalProperties: false });
 
 const ReportFieldSchema = Type.Object({
+  requirementIds: Type.Optional(Type.Array(Type.String())),
   id: Type.String(),
   projectId: Type.String(),
   competencyId: Type.String(),
@@ -153,6 +155,7 @@ const CompetencyStateSchema = Type.Object({
 }, { additionalProperties: false });
 
 const TaskExecutionTraceSchema = Type.Object({
+  modelId: Type.Optional(Type.String()), fallbackUsed: Type.Optional(Type.Boolean()),
   source: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
   durationMs: Type.Number({ minimum: 0 }),
   retryCount: Type.Integer({ minimum: 0 }),
@@ -186,6 +189,8 @@ const DecisionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStateSchema = Type.Object({
+  memory: Type.Optional(Type.Object({ summary: SummarySchema })), rolePack: Type.Optional(RolePackSchema), rolePackFailure: Type.Optional(Type.String()), resumeIndexFailure: Type.Optional(Type.String()),
+  timeBudgetMinutes: Type.Optional(Type.Integer({ minimum: 20, maximum: 60 })), startedAt: Type.Optional(Type.String()),
   phaseVersion: Type.Optional(Type.Literal(3)),
   leads: Type.Optional(Type.Array(LeadSchema)),
   currentTransition: Type.Optional(Type.String()), currentClarification: Type.Optional(Type.String()),
@@ -216,6 +221,8 @@ export const InterviewDecisionSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const CreateInterviewBodySchema = Type.Object({
+  resume: Type.Optional(Type.Object({ consent: Type.Literal(true), text: Type.String({ minLength: 1, maxLength: 100_000 }) }, { additionalProperties: false })),
+  timeBudgetMinutes: Type.Optional(Type.Integer({ minimum: 20, maximum: 60 })),
   candidate: CandidateIntakeSchema,
   job: Type.Optional(JobIntakeSchema),
 }, { additionalProperties: false });
@@ -308,6 +315,7 @@ const CandidateReportGapSchema = Type.Object({
 }, { additionalProperties: false });
 
 const CandidateReportArtifactSchema = Type.Object({
+  requirementMatrix: Type.Optional(RequirementMatrixSchema),
   leads: Type.Array(ProjectedLeadSchema),
   competencies: Type.Array(Type.Object({ competencyId: Type.String(), name: Type.String(), evidenceStrengthIndex: Type.Union([Type.Number(), Type.Null()]),
     confidence: Type.Number(), evidenceIds: Type.Array(Type.String()), reachedDepth: Type.Optional(DepthLevelSchema),
@@ -376,6 +384,7 @@ export const InterviewReportResponseSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStateResponseSchema = Type.Object({
+  resume: Type.Optional(Type.Object({ resumeIndexed: Type.Boolean(), chunkCount: Type.Number() })),
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
   runtime: RuntimeInfoSchema,
@@ -386,6 +395,7 @@ export const InterviewStateResponseSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStepResponseSchema = Type.Object({
+  resume: Type.Optional(Type.Object({ resumeIndexed: Type.Boolean(), chunkCount: Type.Number() })),
   state: InterviewStateSchema,
   stateVersion: Type.Integer({ minimum: 0 }),
   runtime: RuntimeInfoSchema,
@@ -404,6 +414,7 @@ export type RuntimeInfo = Static<typeof RuntimeInfoSchema>;
 export type InterviewReportResponse = Static<typeof InterviewReportResponseSchema>;
 
 export interface InterviewStateResponse {
+  resume?: { resumeIndexed: boolean; chunkCount: number };
   state: InterviewState;
   stateVersion: number;
   runtime: RuntimeInfo;
@@ -419,3 +430,5 @@ export interface InterviewStepResponse extends InterviewStateResponse {
   question?: string;
   evidence: InterviewStep["evidence"];
 }
+
+export interface SessionHistoryItem { sessionId: string; candidateName: string; roleName: string; status: InterviewState["status"]; turnCount: number; createdAt: string; updatedAt: string }

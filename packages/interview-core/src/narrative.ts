@@ -26,6 +26,14 @@ export function validateNarrative(value: unknown, report: CandidateReportArtifac
     const allowedNumbers = new Set((source + " " + Object.values(report.summary).join(" ")).match(/\d+(?:\.\d+)?/g) ?? []);
     if ((sentence.text.match(/\d+(?:\.\d+)?/g) ?? []).some((number) => !allowedNumbers.has(number))) throw new Error("Narrative invents a number");
   };
+  const must = (report.requirementMatrix ?? []).filter((r) => r.priority === "must");
+  const statements = value.requirements ?? [];
+  if (statements.length !== must.length || new Set(statements.map((r) => r.requirementId)).size !== must.length) throw new Error("Narrative must-requirement coverage mismatch");
+  for (const statement of statements) {
+    const row = must.find((r) => r.requirementId === statement.requirementId);
+    if (!row || statement.status !== row.status) throw new Error("Requirement verdict conflicts with matrix");
+    verify(statement.conclusion, new Set(row.evidenceIds));
+  }
   value.overall.forEach((sentence) => verify(sentence));
   if (new Set(value.competencies.map((item) => item.competencyId)).size !== report.competencies.length || value.competencies.length !== report.competencies.length) throw new Error("Narrative competency coverage mismatch");
   for (const item of value.competencies) {
@@ -51,7 +59,7 @@ export function demoNarrative(report: CandidateReportArtifact): ReportNarrative 
     const evidence = all.find((item) => ids.includes(item.evidenceId));
     return evidence ? { text: `候选人说明：“${evidence.answerQuote}”`, evidenceIds: [evidence.evidenceId] } : { text: noEvidenceText, evidenceIds: [] };
   };
-  return validateNarrative({ schemaVersion: "report-narrative-v0.1", overall: [quote(all.map((e) => e.evidenceId))],
+  return validateNarrative({ schemaVersion: "report-narrative-v0.1", requirements: (report.requirementMatrix ?? []).filter((r) => r.priority === "must").map((r) => ({ requirementId: r.requirementId, status: r.status, conclusion: quote(r.evidenceIds) })), overall: [quote(all.map((e) => e.evidenceId))],
     competencies: report.competencies.map((c) => ({ competencyId: c.competencyId, verdict: competencyVerdict(report, c.competencyId), boundary: [quote(c.evidenceIds)], highlights: [] })),
     projects: report.projects.map((p) => ({ projectId: p.projectId, summary: [quote(p.fields.flatMap((f) => f.evidence.map((e) => e.evidenceId)))] })),
     recruiterNextSteps: all.length ? [{ text: "下一轮可围绕这段经历补充核验具体实施过程。", evidenceIds: [all[0].evidenceId] }] : [],
@@ -63,5 +71,5 @@ export function renderNarrativeMarkdown(narrative: ReportNarrative): string {
   const escape = (text: string) => text.replace(/([\\`*_{}[\]()#+.!|>-])/g, "\\$1");
   const sentence = (item: NarrativeSentence) => `- ${escape(item.text)}${item.evidenceIds.length ? ` [Evidence: ${item.evidenceIds.join(", ")}]` : ""}`;
   return ["## 报告叙述", "", ...narrative.overall.map(sentence), "", ...narrative.projects.flatMap((p) => p.summary.map(sentence)),
-    "", "### 招聘方核验建议", "", ...narrative.recruiterNextSteps.map(sentence), "", "### 候选人反馈", "", ...narrative.candidateFeedback.map(sentence), ""].join("\n");
+    "", ...(narrative.requirements ?? []).flatMap((r) => [`### 必须要求 ${escape(r.requirementId)} · ${r.status}`, sentence(r.conclusion), ""]), "### 招聘方核验建议", "", ...narrative.recruiterNextSteps.map(sentence), "", "### 候选人反馈", "", ...narrative.candidateFeedback.map(sentence), ""].join("\n");
 }

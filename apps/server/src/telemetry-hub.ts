@@ -21,6 +21,8 @@ export class TelemetryHub {
       this.send(response, `id: ${trace.traceId}:${trace.revision}\nevent: progress\ndata: ${JSON.stringify(projectRunProgress(trace))}\n\n`);
     }
   }
+  isBusy(sessionId: string): boolean { return [...this.active.values()].some((trace) => trace.sessionId === sessionId && trace.operation !== "narrative"); }
+  disconnect(sessionId: string): void { for (const response of this.connections.get(sessionId) ?? []) response.end(); this.connections.delete(sessionId); }
   traces(sessionId: string): TelemetryTrace[] {
     const traces = new Map(this.store.traces(sessionId).map((trace) => [trace.traceId, trace]));
     for (const trace of this.active.values()) if (trace.sessionId === sessionId) traces.set(trace.traceId, trace);

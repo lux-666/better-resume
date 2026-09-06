@@ -1,3 +1,4 @@
+import { HistoryPanel } from "./history-panel.tsx";
 import { DemoProfiles } from "./demo-profiles.tsx";
 import { ReportPanel } from "./report-panel.tsx";
 import { SupplementForm } from "./supplement-form.tsx";
@@ -77,10 +78,13 @@ function App() {
   const [jobIntroduction, setJobIntroduction] = useState("");
   const [jobResponsibilities, setJobResponsibilities] = useState("");
   const [jobRequirements, setJobRequirements] = useState("");
+  const [resumeText, setResumeText] = useState("");
+  const [resumeConsent, setResumeConsent] = useState(false);
+  const [timeBudget, setTimeBudget] = useState(30);
   const [importNotice, setImportNotice] = useState("");
   const [extractingDocument, setExtractingDocument] = useState<"resume" | "job">();
   const { session, setSession, answer, setAnswer, pendingCommandId, setPendingCommandId, busyAction, busyRef,
-    error, setError, restore, runOnce, start, submit, run, isProcessing, connection } = useInterviewSession();
+    error, setError, restore, clear, open, runOnce, start, submit, run, isProcessing, connection } = useInterviewSession();
   const [auditTab, setAuditTab] = useState<"evidence" | "technical" | "report">("evidence");
   const [serverRuntime, setServerRuntime] = useState<RuntimeInfo>();
   const interview = session?.state;
@@ -104,7 +108,8 @@ function App() {
   function newInterview(): void {
     if (busyRef.current) return;
     localStorage.removeItem(sessionStorageKey);
-    setSession(undefined);
+    clear();
+    setResumeText(""); setResumeConsent(false);
     setCandidateName("");
     setSkills("");
     setProjects([emptyProject()]);
@@ -136,6 +141,8 @@ function App() {
               description: project.description.trim(),
             })),
           },
+          timeBudgetMinutes: timeBudget,
+          ...(resumeConsent && resumeText ? { resume: { consent: true, text: resumeText } } : {}),
           ...(hasJobInput ? {
             job: {
               title: jobTitle.trim(),
@@ -145,7 +152,8 @@ function App() {
             },
           } : {}),
         });
-        setSession(created);
+        restore(created);
+        setResumeText(""); setResumeConsent(false);
         localStorage.setItem(sessionStorageKey, created.state.sessionId);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "创建失败");
@@ -160,6 +168,7 @@ function App() {
     try {
       const extracted = await extractTextDocument(file);
       if (kind === "resume") {
+        setResumeText(extracted.text);
         const parsed = parseResume(extracted.text);
         setCandidateName((current) => current.trim() ? current : parsed.name ?? "");
         setSkills((current) => current.trim() ? current : parsed.skills.join(", "));
@@ -169,7 +178,7 @@ function App() {
           const imported = parsed.projects.map((project) => ({ ...project, key: crypto.randomUUID() }));
           return currentIsBlank ? imported : [...current, ...imported];
         });
-        setImportNotice(`已从 ${extracted.fileName} 回填候选人信息；原始文件内容未保存。`);
+        setImportNotice(`已从 ${extracted.fileName} 回填候选人信息；全文暂存在此页面，只有勾选后才随会话上传。`);
       } else {
         const parsed = parseJobDescription(extracted.text);
         setJobTitle((current) => current.trim() ? current : parsed.title ?? "");
@@ -233,6 +242,14 @@ function App() {
     }
   }
 
+  async function exportSession(): Promise<void> {
+    if (!interview) return;
+    try {
+      const exported = await request(`/api/interviews/${interview.sessionId}/export`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = url; link.download = `session-${interview.sessionId}.json`; link.click(); URL.revokeObjectURL(url);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "导出失败"); }
+  }
   return (
     <main className={pilotMode && interview?.status === "active" ? "pilot-mode pilot-active" : undefined}>
       <header>
@@ -246,12 +263,15 @@ function App() {
             : ` · ${runtime.provider}/${runtime.modelId}`)}
         </p>}
       </header>
+      <HistoryPanel refreshKey={`${interview?.sessionId ?? ""}:${session?.stateVersion ?? ""}`} currentId={interview?.sessionId} disabled={isProcessing}
+        onOpen={open} onDeleted={(id) => { if (id === interview?.sessionId) newInterview(); }} />
       <section className="grid">
         <article>
           <span>01 / 面试</span>
           <h2>{interview?.role.name ?? "创建候选人档案"}</h2>
           {!interview && <>
             <DemoProfiles onChoose={(intake) => {
+              setResumeText(""); setResumeConsent(false);
               setCandidateName(intake.candidate.name); setSkills(intake.candidate.skills.join("，"));
               setProjects(intake.candidate.projects.map((project) => ({ ...project, key: crypto.randomUUID() })));
               setJobTitle(intake.job?.title ?? ""); setJobIntroduction(intake.job?.introduction ?? "");
@@ -259,7 +279,7 @@ function App() {
             }} />
             <fieldset>
               <legend>候选人信息</legend>
-              <p className="field-hint">可直接填写，也可先上传简历自动回填；解析后只保留下面的结构化字段。</p>
+              <p className="field-hint">可直接填写，也可上传简历回填。全文仅在勾选后上传，用于本次面试追问。</p>
               <input
                 aria-label="上传简历"
                 type="file"
@@ -271,6 +291,7 @@ function App() {
                 }}
                 disabled={Boolean(extractingDocument)}
               />
+              {resumeText && <label className="consent"><input type="checkbox" checked={resumeConsent} onChange={(e) => setResumeConsent(e.target.checked)} />允许在本次面试中使用简历全文（{resumeText.length} 字符），之后可删除全文索引</label>}
               {extractingDocument === "resume" && <p className="file-note">正在提取简历文本…</p>}
               <label htmlFor="candidate">姓名</label>
               <input
@@ -372,6 +393,11 @@ function App() {
               />
             </fieldset>
 
+            <label htmlFor="time-budget">面试时长预算</label>
+            <select id="time-budget" value={timeBudget} onChange={(e) => setTimeBudget(Number(e.target.value))}>
+              {[20, 30, 45, 60].map((n) => <option key={n} value={n}>{n} 分钟</option>)}
+            </select>
+            <p className="field-hint">到时在下一次提交后结束，最多 15 轮；缺少的信息保留为待核验项。</p>
             {importNotice && <p className="file-note success-note">{importNotice}</p>}
 
             <button
@@ -381,7 +407,7 @@ function App() {
               aria-busy={busyAction === "create"}
             >
               {busyAction === "create" && <span className="spinner" aria-hidden="true" />}
-              {busyAction === "create" ? "创建中…" : "创建面试 Session"}
+              {busyAction === "create" ? "正在创建调查计划与索引…" : "创建面试 Session"}
             </button>
           </>}
           {interview?.status === "draft" && <>
@@ -398,7 +424,7 @@ function App() {
             </button>
           </>}
           {interview?.status === "active" && <>
-            {interview.turns.length === 0 && <p className="opening">你好，{interview.candidate.name}。我们会围绕你的项目经历逐步交流，通常约 20–30 分钟，最多 15 个问题。不清楚的内容可以直接说明，也可以请我解释或跳过。</p>}
+            {interview.turns.length === 0 && <p className="opening">你好，{interview.candidate.name}。我们会围绕你的项目经历逐步交流，本次预算约 {interview.timeBudgetMinutes ?? 30} 分钟，最多 15 个问题。不清楚的内容可以直接说明，也可以请我解释或跳过。</p>}
             {interview.currentTransition && <p>{interview.currentTransition}</p>}
             {interview.currentClarification && <p className="clarification">{interview.currentClarification}</p>}
             {interview.currentAcknowledgement && <p>{interview.currentAcknowledgement}</p>}
@@ -427,6 +453,20 @@ function App() {
             <SupplementForm session={session!} onComplete={restore} />
           </>}
           {interview && <>
+            {interview.rolePack && <p className="field-hint">已生成岗位调查计划 · {interview.rolePack.requirements.length} 条要求</p>}
+            {interview.rolePackFailure && <p className="field-hint">{interview.rolePackFailure}</p>}
+            {interview.resumeIndexFailure && <p className="field-hint">{interview.resumeIndexFailure}</p>}
+            {Boolean(session?.resume?.chunkCount) && <div><p className="field-hint">{session?.resume?.resumeIndexed ? "简历全文可检索" : "简历索引未就绪"} · {session!.resume!.chunkCount} 个片段。删除索引不改写已接受的面试记录。</p>
+              <button className="secondary" disabled={isProcessing} onClick={() => {
+                void request(`/api/interviews/${interview.sessionId}/resume-index`, { method: "DELETE" }).then(() => request<InterviewStateResponse>(`/api/interviews/${interview.sessionId}/state`)).then(restore).catch((cause) => setError(cause.message));
+              }}>删除简历全文索引</button></div>}
+            <details className="transcript"><summary>完整对话 · {interview.turns.length} 轮</summary>
+              {interview.turns.map((turn) => <section key={turn.id}><strong>{turn.kind === "supplement" ? "补充" : `第 ${turn.index + 1} 轮`}：{turn.question}</strong>
+                {interview.clarifications?.filter((c) => c.question === turn.question).map((c, i) => <p key={i}>候选人：{c.request}；问题说明：{c.response}</p>)}
+                <p className="answer-text">{turn.answer}</p></section>)}
+              {interview.clarifications?.filter((c) => !interview.turns.some((t) => t.question === c.question)).map((c, i) => <p key={i}>候选人：{c.request}；问题说明：{c.response}</p>)}
+            </details>
+            <button className="secondary" onClick={() => void exportSession()}>导出会话记录 JSON</button>
             <button className="secondary" onClick={() => void downloadInterviewReport("json")}>
               下载{interview.status === "completed" ? "最终" : "当前"} Report JSON
             </button>

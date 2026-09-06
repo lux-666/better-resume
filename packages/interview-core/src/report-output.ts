@@ -1,3 +1,5 @@
+import { requirementMatrix } from "./role-pack.ts";
+import type { RequirementMatrix } from "./phase4-schema.ts";
 import { fieldConclusion, projectLeads } from "./investigation.ts";
 import type { DepthLevel } from "./types.ts";
 import type { ReportNarrative, NarrativeStatus } from "./narrative-schema.ts";
@@ -51,6 +53,7 @@ export interface CandidateReportGap {
 }
 
 export interface CandidateReportArtifact {
+  requirementMatrix?: RequirementMatrix;
   leads: ReturnType<typeof projectLeads>;
   competencies: Array<{ competencyId: string; name: string; evidenceStrengthIndex: number | null; confidence: number; evidenceIds: string[];
     statusCounts: Record<ReportField["status"], number>; reachedDepth?: DepthLevel }>;
@@ -267,9 +270,11 @@ export function buildCandidateReportArtifact(
   const nextSteps = projects.flatMap((project) => project.fields.flatMap((field) =>
     field.recommendation ? [field.recommendation] : []));
   if (nextSteps.length === 0) nextSteps.push("进入下一招聘环节，并结合岗位要求对关键结论做抽样复核。");
-  const recommendationValue = reportRecommendation(summary);
+  const matrix = requirementMatrix(state);
+  const recommendationValue = matrix.some((r) => r.priority === "must" && r.status === "contradicted") ? "hold_for_clarification" : reportRecommendation(summary);
   const integrityErrors = validateReportIntegrity(state);
   return {
+    ...(state.rolePack ? { requirementMatrix: matrix } : {}),
     leads: projectLeads(state),
     competencies: state.role.competencies.map((competency) => {
       const fields = state.report.fields.filter((field) => field.competencyId === competency.id);
@@ -323,7 +328,8 @@ export function buildCandidateReportArtifact(
     ],
     limitations: [
       ...(state.role.source === "generic" ? ["未提供 Job Description，本报告不能形成具体岗位匹配结论。"] : []),
-      "当前报告使用跨岗位通用调查维度，不等价于对每条岗位要求逐项验证。",
+      ...(state.rolePack ? ["岗位要求映射和项目相关性根据 JD 与候选人填写的项目描述生成，调查计划本身不是能力证据。"] : [state.rolePackFailure ?? "当前报告使用跨岗位通用调查维度，不等价于对每条岗位要求逐项验证。"]),
+      ...(state.resumeIndexFailure ? [state.resumeIndexFailure] : []),
       "招聘建议只基于本次面试获得的证据，不包含背调、作品核验或其他招聘环节信息。",
     ],
     integrity: { valid: integrityErrors.length === 0, errors: integrityErrors },
@@ -394,6 +400,10 @@ export function renderInterviewReportMarkdown(report: CandidateReportArtifact): 
   );
   if (report.role.requirements.length > 0) {
     lines.push("", "岗位要求：", "", ...report.role.requirements.map((item) => `- ${escapeMarkdown(item)}`));
+  }
+  if (report.requirementMatrix?.length) {
+    lines.push("", "## 岗位要求匹配", "");
+    for (const item of report.requirementMatrix) lines.push(`- **${escapeMarkdown(item.text)}** (${item.priority})：${item.status}；已展示层级 ${item.reachedDepth ?? "未知"}；Evidence: ${item.evidenceIds.join(", ") || "无"}`);
   }
   lines.push("", "## 分项目详细评估");
   for (const project of report.projects) {

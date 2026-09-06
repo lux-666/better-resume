@@ -35,7 +35,7 @@ export function prepareLeads(state: InterviewState, proposals: readonly LeadProp
 export function groundedAnswerClaims(state: InterviewState, projectId: string): Claim[] {
   const competencies = new Set(state.report.fields.filter((field) => field.projectId === projectId).map((field) => field.competencyId));
   return state.evidence.filter((item) => item.projectId !== projectId && item.polarity === "support" && competencies.has(item.competencyId))
-    .slice(-10).map((item) => ({ id: `answer:${item.id}:${projectId}`, source: "candidate_answer", sourceEvidenceId: item.id,
+    .map((item) => ({ id: `answer:${item.id}:${projectId}`, source: "candidate_answer", sourceEvidenceId: item.id,
       text: item.statement, sourceQuote: item.sourceQuote, projectId, status: "unverified", relatedCompetencies: [item.competencyId],
       supportingEvidenceIds: [], weakEvidenceIds: [], contradictingEvidenceIds: [] }));
 }

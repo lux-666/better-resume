@@ -19,7 +19,9 @@
     "test": "node --import tsx --test apps/*/src/*.test.ts packages/*/src/*.test.ts docs/architecture/structure.test.mjs",
     "eval:phase3": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-phase3.ts",
     "eval:knowledge": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-knowledge.ts",
-    "eval:knowledge:questions": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-knowledge-questions.ts"
+    "eval:knowledge:questions": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-knowledge-questions.ts",
+    "eval:phase4": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-phase4.ts",
+    "backup": "node --env-file-if-exists=.env --import tsx apps/server/src/backup.ts"
   },
   "engines": {
     "node": ">=22.19"

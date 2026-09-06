@@ -34,6 +34,11 @@ export function ReportPanel({ sessionId, version }: { sessionId: string; version
       <h4>能力边界</h4>{report.narrative.competencies.map((item) => <div key={item.competencyId}><strong>{report.competencies.find((c) => c.competencyId === item.competencyId)?.name}</strong>{paragraph(item.boundary)}{paragraph(item.highlights)}</div>)}
       <h4>项目结论</h4>{report.narrative.projects.map((item) => <div key={item.projectId}><strong>{report.projects.find((p) => p.projectId === item.projectId)?.name}</strong>{paragraph(item.summary)}</div>)}
       <h4>招聘方下一步</h4>{paragraph(report.narrative.recruiterNextSteps)}<h4>候选人反馈</h4>{paragraph(report.narrative.candidateFeedback)}</div>}
+    {Boolean(report.requirementMatrix?.length) && <section aria-label="岗位要求匹配"><h4>岗位要求匹配</h4>
+      {report.requirementMatrix!.map((row) => <div className="report-field" key={row.requirementId}><strong>{row.text}</strong><p>{row.priority} · {{ supported: "有支持", partial: "部分支持", weak: "证据偏弱", contradicted: "存在冲突", not_investigated: "尚未调查" }[row.status]} · 已展示层级 {row.reachedDepth ?? "未知"}</p>
+        {paragraph(report.narrative?.requirements?.filter((r) => r.requirementId === row.requirementId).map((r) => r.conclusion) ?? [])}
+        <p className="citations">{row.evidenceIds.map((id, i) => <a key={id} href={`#evidence-${id}`}>原话 {i + 1}</a>)}</p></div>)}
+    </section>}
     {report.projects.map((project) => <section key={project.projectId}><h4>{project.name}</h4>
       {project.fields.map((field) => <details className="report-field" key={field.fieldId}>
         <summary><strong>{field.name}</strong><span>{field.status} · 已展示层级 {field.detail.reachedDepth ?? "未知"}</span></summary>

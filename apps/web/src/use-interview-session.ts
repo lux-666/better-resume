@@ -14,11 +14,24 @@ export function useInterviewSession() {
   const pending = useRef<AnswerCommand | undefined>(undefined);
   const currentSessionId = useRef<string | undefined>(undefined);
   currentSessionId.current = session?.state.sessionId;
+  const navigation = useRef(0);
   const observation = useRunProgress(session?.state.sessionId);
   const run = pendingCommandId ? observation.runs.findLast((item) => item.commandId === pendingCommandId)
     : observation.runs.findLast((item) => item.operation !== "narrative");
   const isProcessing = Boolean(busyAction) || run?.status === "running";
+  function clear(): void {
+    navigation.current++; currentSessionId.current = undefined; pending.current = undefined;
+    setSession(undefined); setPendingCommandId(""); setAnswer(""); setError(""); localStorage.removeItem(sessionStorageKey);
+  }
+  async function open(id: string): Promise<void> {
+    if (busyRef.current || isProcessing) return;
+    const requestVersion = ++navigation.current;
+    const restored = await request<InterviewStateResponse>(`/api/interviews/${id}/state`);
+    if (navigation.current === requestVersion) { setError(""); restore(restored); }
+  }
   function restore(restored: InterviewStateResponse): void {
+    currentSessionId.current = restored.state.sessionId;
+    localStorage.setItem(sessionStorageKey, restored.state.sessionId);
     pending.current = restored.pendingCommand;
     setSession(restored); setPendingCommandId(restored.pendingCommand?.commandId ?? ""); setAnswer(restored.pendingCommand?.answer ?? "");
   }
@@ -26,7 +39,8 @@ export function useInterviewSession() {
     const id = localStorage.getItem(sessionStorageKey);
     if (!id) return;
     let disposed = false;
-    void request<InterviewStateResponse>(`/api/interviews/${id}/state`).then((state) => { if (!disposed) restore(state); }).catch((cause) => {
+    const requestVersion = navigation.current;
+    void request<InterviewStateResponse>(`/api/interviews/${id}/state`).then((state) => { if (!disposed && navigation.current === requestVersion) restore(state); }).catch((cause) => {
       if (disposed) return;
       if (cause instanceof ApiRequestError && cause.code === "NOT_FOUND") localStorage.removeItem(sessionStorageKey);
       else setError(cause instanceof Error ? cause.message : "恢复失败");
@@ -72,5 +86,5 @@ export function useInterviewSession() {
     });
   }
   return { session, setSession, answer, setAnswer, pendingCommandId, setPendingCommandId, busyAction, busyRef,
-    error, setError, restore, runOnce, start, submit, run, isProcessing, connection: observation.connection };
+    error, setError, restore, clear, open, runOnce, start, submit, run, isProcessing, connection: observation.connection };
 }

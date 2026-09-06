@@ -2,13 +2,13 @@
 
 [返回 Phase 索引](../README.md)
 
-**状态：In progress（先交付 4.1 的 20 题试用批次）。**
+**状态：MVP 已实现（4.1–4.4），小样本真实工具链已验证；完整质量 Gate 待后续。**
 
 ## 业务目标
 
 Phase 3 之后系统能探测能力边界并写出可读报告，但两项能力仍然缺失并且在文档中被明确否认：检索增强与长文本记忆。Phase 4 以“对追问深度真实有帮助”为唯一取舍标准交付这两项，同时把四个通用调查字段升级为按岗位要求生成的调查计划，使报告能给出逐条岗位匹配结论。
 
-Phase 4 结束后，文档才允许声称系统结合了 RAG 与长文本记忆。
+已接入真实知识检索与会话记忆工具链；效果改进仍以实测为准，不以实现完成代替质量 Gate。
 
 ## 设计原则
 
@@ -23,10 +23,10 @@ Phase 4 结束后，文档才允许声称系统结合了 RAG 与长文本记忆�
 
 | Task | 状态 | 依赖 | 交付结果 |
 | --- | --- | --- | --- |
-| [4.1 面试官知识 RAG](task-4.1-interviewer-knowledge-rag.md) | In progress：20 题试用 | 3.1 | 策略库与能力词典索引、`retrieve_probe_knowledge` 工具、命中追踪与准确率评测 |
-| [4.2 长文本记忆](task-4.2-long-context-memory.md) | Planned | 3.1 | 滚动摘要、对话与 Evidence 语义索引、`recall` 工具、15 轮长程 Profile |
-| [4.3 Role Pack 与简历全文](task-4.3-role-pack-and-resume.md) | Planned | 4.1 | JD 逐条要求映射、按岗位生成调查字段、可选简历全文索引、岗位匹配矩阵 |
-| [4.4 产品化与稳定性](task-4.4-productization.md) | Planned | 4.1–4.3 | 本地历史 Session、保留/导出/删除、备用模型降级、故障恢复与本机发布验收 |
+| [4.1 面试官知识 RAG](task-4.1-interviewer-knowledge-rag.md) | MVP：20 题试用 | 3.1 | 策略库与能力词典索引、`retrieve_probe_knowledge` 工具、命中追踪与准确率评测 |
+| [4.2 长文本记忆](task-4.2-long-context-memory.md) | MVP 已实现 | 3.1 | 滚动摘要、对话与 Evidence 语义索引、`recall` 工具、15 轮长程 Profile |
+| [4.3 Role Pack 与简历全文](task-4.3-role-pack-and-resume.md) | MVP 已实现 | 4.1 | JD 逐条要求映射、按岗位生成调查字段、可选简历全文索引、岗位匹配矩阵 |
+| [4.4 产品化与稳定性](task-4.4-productization.md) | MVP 已实现 | 4.1–4.3 | 本地历史 Session、保留/导出/删除、备用模型降级、故障恢复与本机发布验收 |
 
 执行顺序：
 
@@ -53,3 +53,10 @@ Phase 4 结束后，文档才允许声称系统结合了 RAG 与长文本记忆�
 - 备用模型降级在故障注入下不产生重复 Evidence 或部分 State 变化；
 - 人工 Rubric 全部项目不低于 Phase 3 基线；
 - `npm test`、typecheck、build 通过。
+
+## 当前验证记录（2026-09-06）
+
+- `npm test`：92/92；typecheck 与生产构建通过。
+- 真实 Report + embedding：1 份合成 JD 的 3 条原文要求生成 12 个字段；三项目 14 轮样本自主 recall 一次并检出 cross_project，完整性通过。
+- 本机浏览器验证历史打开/刷新恢复与对话展示；自动化验证重启、删除、备用模型和 SQLite WAL 在线备份/恢复。
+- 上述为 MVP 验证，不代表本页退出标准中的大样本、人评、延迟与全新机器安装已通过。

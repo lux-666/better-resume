@@ -1,8 +1,12 @@
+import { buildSummary } from "../../../packages/interview-core/src/memory.ts";
+import type { SessionMemory } from "./session-memory.ts";
+import type { ModelRuntime } from "./model-runtime.ts";
+import { runModelStage } from "./model-stage.ts";
 import { clarifyWithAgent } from "../../../packages/pi-runtime/src/clarification.ts";
 import type { AnswerCommand, InterviewStateResponse, InterviewStepResponse } from "../../../packages/api-contract/src/index.ts";
 import { activateInterview, applyInterviewDecision, getDemoInterviewDecision, getInterviewProgress, HARD_MAX_TURNS,
   recordAnswer, recordClarification, getActiveInterviewContext, answerTurnCount, setStepExecution, type InterviewState, type InterviewStep, type TaskExecutionTrace } from "../../../packages/interview-core/src/index.ts";
-import { decideNextStepWithAgent, editReportWithAgent, ModelProviderError, type TelemetryCollector } from "../../../packages/pi-runtime/src/index.ts";
+import { decideNextStepWithAgent, editReportWithAgent, type TelemetryCollector } from "../../../packages/pi-runtime/src/index.ts";
 import { HttpError } from "./http.ts";
 import { questionId, stateVersion } from "./session.ts";
 import type { InterviewStore } from "./store.ts";
@@ -14,11 +18,12 @@ export class ExecutionTimeoutError extends HttpError {
 }
 export class InterviewExecution {
   private readonly starts = new Set<string>();
-  constructor(readonly store: InterviewStore, readonly hub: TelemetryHub, readonly runtimes: RuntimeSet, readonly deadlineMs: number, readonly knowledge?: ProbeKnowledge) {
+  constructor(readonly store: InterviewStore, readonly hub: TelemetryHub, readonly runtimes: RuntimeSet, readonly deadlineMs: number, readonly knowledge?: ProbeKnowledge, readonly memory?: SessionMemory) {
     if (!Number.isFinite(deadlineMs) || deadlineMs <= 0 || deadlineMs >= store.leaseMs) throw new Error("Execution deadline must be positive and shorter than command lease");
   }
+  isBusy(sessionId: string): boolean { return this.starts.has(sessionId); }
   response(state: InterviewState, pending = true): InterviewStateResponse {
-    return { state, stateVersion: stateVersion(state), runtime: this.runtimes.info,
+    return { ...(this.memory ? { resume: this.memory.resumeInfo(state.sessionId) } : {}), state, stateVersion: stateVersion(state), runtime: this.runtimes.info,
       progress: getInterviewProgress(state, state.role.competencies.filter((c) => c.core).map((c) => c.id)),
       pendingSupplement: pending ? this.store.pendingSupplement(state) : undefined,
       questionId: questionId(state), pendingCommand: pending ? this.store.pending(state) : undefined };
@@ -31,35 +36,35 @@ export class InterviewExecution {
     try { const value = fn(); collector.finish(span); return value; }
     catch (error) { collector.error(span, "state_error", error); collector.finish(span); throw error; }
   }
-  private async modelCall<T>(collector: TelemetryCollector, signal: AbortSignal, operation: string, fn: (attempt: number) => Promise<T>): Promise<{ value: T; trace: TaskExecutionTrace }> {
+  private async modelCall<T>(collector: TelemetryCollector, signal: AbortSignal, operation: string, runtime: ModelRuntime,
+    fn: (runtime: ModelRuntime, attempt: number, signal: AbortSignal) => Promise<T>): Promise<{ value: T; trace: TaskExecutionTrace }> {
     const first = collector.trace.spans.length;
-    let attempt = 1;
-    while (true) {
-      signal.throwIfAborted();
-      try {
-        const value = await fn(attempt);
-        signal.throwIfAborted();
-        const stages = collector.trace.spans.slice(first).filter((span) => span.kind === "agent" && span.operation === operation);
-        return { value, trace: { source: "llm", durationMs: stages.reduce((n, span) => n + (span.durationMs ?? 0), 0), retryCount: attempt - 1 } };
-      } catch (error) {
-        signal.throwIfAborted();
-        if (!(error instanceof ModelProviderError) || attempt >= 2) throw error;
-        attempt += 1;
-      }
-    }
+    const result = await runModelStage({ primary: runtime, fallback: this.runtimes.fallback, telemetry: collector, signal,
+      primaryTimeoutMs: this.deadlineMs * .3, invoke: fn });
+    const stages = collector.trace.spans.slice(first).filter((span) => span.kind === "agent" && span.operation === operation);
+    return { value: result.value, trace: { source: "llm", modelId: result.modelId, fallbackUsed: result.fallbackUsed,
+      durationMs: stages.reduce((n, span) => n + (span.durationMs ?? 0), 0), retryCount: result.attempts - 1 } };
+  }
+  private summarize(state: InterviewState, collector: TelemetryCollector) {
+    if (!this.memory) return;
+    const span = collector.start("summary_update", "state");
+    const summary = buildSummary(state); state.memory = { summary };
+    collector.finish(span, { summary: { version: summary.version, sourceStateVersion: summary.sourceStateVersion, chars: JSON.stringify(summary).length, truncated: summary.truncated } });
   }
   private async next(state: InterviewState, collector: TelemetryCollector, signal: AbortSignal, turnId?: string) {
-    if (answerTurnCount(state) >= HARD_MAX_TURNS || this.runtimes.interview.mode === "demo") {
+    this.summarize(state, collector);
+    const expired = Boolean(state.startedAt && state.timeBudgetMinutes && Date.now() - Date.parse(state.startedAt) >= state.timeBudgetMinutes * 60_000);
+    if (expired || answerTurnCount(state) >= HARD_MAX_TURNS || this.runtimes.interview.mode === "demo") {
       const span = collector.start("interview_agent", "agent", undefined, { attempt: 1 });
-      const decision = answerTurnCount(state) >= HARD_MAX_TURNS ? { action: "FINISH_INTERVIEW" as const, reason: "Hard turn limit reached." } : getDemoInterviewDecision(state);
+      const decision = expired ? { action: "FINISH_INTERVIEW" as const, reason: "Interview time budget exhausted." } : answerTurnCount(state) >= HARD_MAX_TURNS ? { action: "FINISH_INTERVIEW" as const, reason: "Hard turn limit reached." } : getDemoInterviewDecision(state);
       collector.finish(span);
       const step = this.stateChange(collector, "apply_decision", () => applyInterviewDecision(state, decision, turnId));
       return { step, trace: { source: "demo" as const, durationMs: span.durationMs ?? 0, retryCount: 0 } };
     }
     const runtime = this.runtimes.interview;
-    const retrievalBudget = { remaining: 2 };
-    const result = await this.modelCall(collector, signal, "interview_agent", (attempt) => decideNextStepWithAgent({
-      model: runtime.model!, streamFn: runtime.streamFn!, state, telemetry: collector, signal, attempt, knowledge: this.knowledge, retrievalBudget,
+    const retrievalBudget = { remaining: 2 }; const recallBudget = { remaining: 2 };
+    const result = await this.modelCall(collector, signal, "interview_agent", runtime, (runtime, attempt, signal) => decideNextStepWithAgent({
+      model: runtime.model!, streamFn: runtime.streamFn!, state, telemetry: collector, signal, attempt, knowledge: this.knowledge, retrievalBudget, memory: this.memory, recallBudget,
     }));
     return { step: this.stateChange(collector, "apply_decision", () => applyInterviewDecision(state, result.value, turnId)), trace: result.trace };
   }
@@ -79,7 +84,7 @@ export class InterviewExecution {
     try {
       return await this.run(state, "start", async (collector, signal) => {
         const version = stateVersion(state);
-        this.stateChange(collector, "activate_interview", () => activateInterview(state));
+        this.stateChange(collector, "activate_interview", () => { activateInterview(state); state.startedAt = new Date().toISOString(); });
         const { step, trace } = await this.next(state, collector, signal);
         signal.throwIfAborted();
         setStepExecution(state, { ...this.runtimes.info, question: trace });
@@ -99,7 +104,7 @@ export class InterviewExecution {
       return await this.run(state, "answer", async (collector, signal) => {
         let edit: Awaited<ReturnType<typeof editReportWithAgent>> | undefined;
         let evidenceTrace: TaskExecutionTrace;
-        const runtime = this.runtimes.report;
+        const runtime = this.runtimes.report; const recallBudget = { remaining: 2 };
         if (command.intent === "clarify") {
           edit = { answerDisposition: "question_back", evidence: [] };
           evidenceTrace = { source: runtime.mode, durationMs: 0, retryCount: 0 };
@@ -110,8 +115,8 @@ export class InterviewExecution {
             sourceQuote: command.answer, depthLevel: state.traces.at(-1)?.targetDepth ?? 1 }] };
           evidenceTrace = { source: runtime.mode, durationMs: 0, retryCount: 0 };
         } else if (runtime.mode === "llm") {
-          const result = await this.modelCall(collector, signal, "report_agent", (attempt) => editReportWithAgent({
-            model: runtime.model!, streamFn: runtime.streamFn!, state, answer: command.answer, telemetry: collector, signal, attempt,
+          const result = await this.modelCall(collector, signal, "report_agent", runtime, (runtime, attempt, signal) => editReportWithAgent({
+            model: runtime.model!, streamFn: runtime.streamFn!, state, answer: command.answer, telemetry: collector, signal, attempt, memory: this.memory, recallBudget,
           }));
           edit = result.value; evidenceTrace = result.trace;
         } else {
@@ -126,7 +131,7 @@ export class InterviewExecution {
             throw rejection;
           }
           const interview = this.runtimes.interview;
-          const clarification = interview.mode === "llm" ? (await this.modelCall(collector, signal, "interview_agent", (attempt) => clarifyWithAgent({
+          const clarification = interview.mode === "llm" ? (await this.modelCall(collector, signal, "interview_agent", interview, (interview, attempt, signal) => clarifyWithAgent({
             model: interview.model!, streamFn: interview.streamFn!, state, request: command.answer, telemetry: collector, signal, attempt,
           }))).value : "可以只选一个你亲自参与的具体例子，说明与这个问题相关的部分；不确定的地方可以直接说不清楚。";
           signal.throwIfAborted();
@@ -135,6 +140,7 @@ export class InterviewExecution {
           this.stateChange(collector, "persist_answer_command_and_state", () => this.store.complete(state, command, owner, response));
           completed = true; return response;
         }
+        for (const claim of edit?.resumeClaims ?? []) if (!state.candidate.claims.some((c) => c.id === claim.id)) state.candidate.claims.push(claim);
         const record = this.stateChange(collector, "apply_report_edit", () => recordAnswer(state, command.answer, edit?.evidence, edit?.answerDisposition, edit?.leads));
         collector.linkTurn(record.turn.id);
         const { step, trace } = await this.next(state, collector, signal, record.turn.id);
@@ -157,15 +163,17 @@ export class InterviewExecution {
     let completed = false;
     try {
       return await this.run(state, "supplement", async (collector, signal) => {
-        const runtime = this.runtimes.report;
-        const edit = runtime.mode === "llm" ? (await this.modelCall(collector, signal, "report_agent", (attempt) => editReportWithAgent({
-          model: runtime.model!, streamFn: runtime.streamFn!, state, projectId, answer: command.answer, telemetry: collector, signal, attempt,
+        const runtime = this.runtimes.report; const recallBudget = { remaining: 2 };
+        const edit = runtime.mode === "llm" ? (await this.modelCall(collector, signal, "report_agent", runtime, (runtime, attempt, signal) => editReportWithAgent({
+          model: runtime.model!, streamFn: runtime.streamFn!, state, projectId, answer: command.answer, telemetry: collector, signal, attempt, memory: this.memory, recallBudget,
         }))).value : undefined;
         signal.throwIfAborted();
+        for (const claim of edit?.resumeClaims ?? []) if (!state.candidate.claims.some((c) => c.id === claim.id)) state.candidate.claims.push(claim);
         const record = this.stateChange(collector, "record_supplement", () => recordAnswer(state, command.answer, edit?.evidence, edit?.answerDisposition, edit?.leads, projectId));
         collector.linkTurn(record.turn.id);
         const decision = { action: "RECORD_SUPPLEMENT" as const, reason: "Post-closing candidate supplement recorded" };
         state.traces.push({ ...decision, turnId: record.turn.id });
+        this.summarize(state, collector);
         const response = this.stepResponse({ state, decision, evidence: record.evidence }, command.commandId);
         this.stateChange(collector, "persist_supplement", () => this.store.complete(state, command, owner, response));
         completed = true; return response;

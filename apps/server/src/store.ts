@@ -145,5 +145,28 @@ export class InterviewStore {
     this.database.prepare("UPDATE answer_commands SET lease_owner=NULL,lease_expires_at=NULL WHERE status='pending'").run();
     this.database.prepare("UPDATE report_narratives SET status='failed' WHERE status='pending'").run();
   }
+  history() {
+    const rows = this.database.prepare("SELECT id,created_at,updated_at,state FROM sessions ORDER BY updated_at DESC,id").all() as Array<{ id: string; created_at: string; updated_at: string; state: string }>;
+    return rows.map((row) => { const state = JSON.parse(row.state) as InterviewState; return { sessionId: row.id, candidateName: state.candidate.name, roleName: state.role.name,
+      status: state.status, turnCount: state.turns.length, createdAt: row.created_at, updatedAt: row.updated_at }; });
+  }
+  hasActiveCommand(id: string): boolean {
+    return Boolean(this.database.prepare("SELECT 1 FROM answer_commands WHERE session_id=? AND status='pending' AND lease_owner IS NOT NULL AND lease_expires_at>?").get(id, Date.now()));
+  }
+  exportSession(id: string) {
+    return { schemaVersion: "session-export-v1", exportedAt: new Date().toISOString(), state: this.load(id), traces: this.traces(id),
+      commands: this.database.prepare("SELECT command_id,question_id,expected_state_version,answer,intent,status,created_at FROM answer_commands WHERE session_id=? ORDER BY created_at").all(id),
+      narrative: this.database.prepare("SELECT state_version,status,result FROM report_narratives WHERE session_id=?").get(id) ?? null };
+  }
+  deleteSession(id: string): void {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const table of ["answer_commands", "telemetry_traces", "report_narratives", "session_chunks", "session_documents"]) {
+        if (this.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) this.database.prepare(`DELETE FROM ${table} WHERE session_id=?`).run(id);
+      }
+      this.database.prepare("DELETE FROM sessions WHERE id=?").run(id);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
   close(): void { this.database.close(); }
 }
