@@ -52,8 +52,8 @@ LLM_EMBEDDING_API_KEY=your-key
 embedding URL/Key 未单独填写时使用 `LLM_BASE_URL` / `LLM_API_KEY`。模型名需要匹配你的 Provider。重启后自动索引 [20 张知识卡片](knowledge/README.md)；无 embedding 配置或索引失败时继续使用静态追问策略，健康接口与技术视图明确显示状态。Demo 模式不调用 Interview Agent 检索工具。
 
 ```bash
-npm run eval:knowledge
-npm run eval:knowledge:questions
+npm run eval:knowledge -- --smoke
+npm run eval:knowledge:questions -- --smoke
 ```
 
 应用数据默认保存在 `data/better-resume.db`，由 `DATABASE_PATH` 切换。Session 已持久化；完整历史列表和用户删除/导出入口按 [Task 4.4](docs/phase/phase4/task-4.4-productization.md) 实现，不需要账户或登录验证码。

@@ -5,6 +5,8 @@ import type { DatabaseSync } from "node:sqlite";
 import type { EmbeddingClient } from "./embedding.ts";
 import type { KnowledgeHit, KnowledgeQuery, KnowledgeStatus, ProbeKnowledge } from "../../../packages/pi-runtime/src/knowledge.ts";
 import type { TelemetryCollector } from "../../../packages/pi-runtime/src/telemetry.ts";
+import { KnowledgeSourceSchema, type KnowledgeSource } from "../../../packages/api-contract/src/telemetry.ts";
+import { Check } from "typebox/value";
 
 function walk(root: string): string[] {
   if (!existsSync(root)) return [];
@@ -29,8 +31,16 @@ export function readKnowledgeCards(root: string) {
       !strings("fieldKinds") || !Array.isArray(meta.depthLevels) || !meta.depthLevels.every((n) => Number.isInteger(n) && n >= 1 && n <= 5) || !text) {
       throw new Error(`Invalid knowledge card: ${relative(root, path)}`);
     }
-    return [{ id: meta.id, kind: meta.kind, domains: meta.domains as string[], fieldKinds: meta.fieldKinds as string[],
+    const source = Object.fromEntries(Object.keys(KnowledgeSourceSchema.properties).filter((key) => meta[key] !== undefined).map((key) => [key, meta[key]]));
+    if (!Check(KnowledgeSourceSchema, source)) throw new Error(`Invalid knowledge source: ${relative(root, path)}`);
+    const embeddingText = [
+      `领域：${(meta.domains as string[]).join(", ")}`, `字段：${(meta.fieldKinds as string[]).join(", ")}`,
+      source.originalQuestion && `原题（上游素材，可能含预设）：${source.originalQuestion}`,
+      source.sourceFocus && `源题考察点：${source.sourceFocus}`, text,
+    ].filter(Boolean).join("\n\n");
+    return [{ id: meta.id, kind: meta.kind, domains: meta.domains as string[], fieldKinds: meta.fieldKinds as string[], source,
       depthLevels: meta.depthLevels as number[], text, sourcePath: relative(root, path),
+      embeddingText, embeddingHash: createHash("sha256").update(embeddingText).digest("hex"),
       contentHash: createHash("sha256").update(raw).digest("hex") }];
   });
   if (new Set(cards.map((card) => card.id)).size !== cards.length) throw new Error("Duplicate knowledge card ID");
@@ -43,7 +53,7 @@ export function cosine(a: number[], b: number[]): number {
   for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; aa += a[i] * a[i]; bb += b[i] * b[i]; }
   return aa && bb ? dot / Math.sqrt(aa * bb) : 0;
 }
-type Row = { id: string; kind: string; text: string; embedding: Uint8Array; source_path: string; field_kinds: string; depth_levels: string; content_hash: string };
+type Row = { id: string; kind: string; text: string; embedding: Uint8Array; source_path: string; field_kinds: string; depth_levels: string; content_hash: string; embedding_hash: string; source_metadata: string };
 function encode(vector: number[]): Buffer {
   const buffer = Buffer.alloc(vector.length * 8);
   vector.forEach((n, i) => buffer.writeDoubleLE(n, i * 8));
@@ -62,6 +72,10 @@ export class KnowledgeStore implements ProbeKnowledge {
       id TEXT PRIMARY KEY, kind TEXT NOT NULL, domains TEXT NOT NULL, field_kinds TEXT NOT NULL,
       depth_levels TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL, source_path TEXT NOT NULL,
       content_hash TEXT NOT NULL, embedding_fingerprint TEXT NOT NULL);`);
+    const columns = database.prepare("PRAGMA table_info(knowledge_chunks)").all() as Array<{ name: string }>;
+    for (const [name, fallback] of [["embedding_hash", ""], ["source_metadata", "{}"]]) {
+      if (!columns.some((column) => column.name === name)) database.exec(`ALTER TABLE knowledge_chunks ADD COLUMN ${name} TEXT NOT NULL DEFAULT '${fallback}'`);
+    }
   }
   health(): KnowledgeStatus { return { ...this.state }; }
   async index(root: string, signal?: AbortSignal): Promise<{ indexed: number; skipped: number; durationMs: number }> {
@@ -71,13 +85,13 @@ export class KnowledgeStore implements ProbeKnowledge {
     try {
       const cards = readKnowledgeCards(root);
       if (!cards.length) throw new Error("No knowledge cards found");
-      const rows = this.database.prepare("SELECT id,content_hash,embedding_fingerprint,embedding FROM knowledge_chunks").all() as Array<Pick<Row, "id" | "content_hash" | "embedding"> & { embedding_fingerprint: string }>;
+      const rows = this.database.prepare("SELECT id,embedding_hash,embedding_fingerprint,embedding FROM knowledge_chunks").all() as Array<Pick<Row, "id" | "embedding_hash" | "embedding"> & { embedding_fingerprint: string }>;
       const old = new Map(rows.map((row) => [row.id, row]));
-      const pending = cards.filter((card) => old.get(card.id)?.content_hash !== card.contentHash || old.get(card.id)?.embedding_fingerprint !== this.client!.fingerprint);
+      const pending = cards.filter((card) => old.get(card.id)?.embedding_hash !== card.embeddingHash || old.get(card.id)?.embedding_fingerprint !== this.client!.fingerprint);
       const vectors = new Map<string, number[]>();
       for (let i = 0; i < pending.length; i += 10) {
         const batch = pending.slice(i, i + 10);
-        const embedded = await this.client.embed(batch.map((card) => card.text), signal);
+        const embedded = await this.client.embed(batch.map((card) => card.embeddingText), signal);
         batch.forEach((card, n) => vectors.set(card.id, embedded[n]));
       }
       signal?.throwIfAborted();
@@ -87,9 +101,12 @@ export class KnowledgeStore implements ProbeKnowledge {
       this.database.exec("BEGIN IMMEDIATE");
       try {
         this.database.exec("DELETE FROM knowledge_chunks");
-        const insert = this.database.prepare("INSERT INTO knowledge_chunks VALUES(?,?,?,?,?,?,?,?,?,?)");
+        const insert = this.database.prepare(`INSERT INTO knowledge_chunks
+          (id,kind,domains,field_kinds,depth_levels,text,embedding,source_path,content_hash,embedding_fingerprint,embedding_hash,source_metadata)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
         for (const card of cards) insert.run(card.id, card.kind, JSON.stringify(card.domains), JSON.stringify(card.fieldKinds), JSON.stringify(card.depthLevels), card.text,
-          vectors.has(card.id) ? encode(vectors.get(card.id)!) : old.get(card.id)!.embedding, card.sourcePath, card.contentHash, this.client.fingerprint);
+          vectors.has(card.id) ? encode(vectors.get(card.id)!) : old.get(card.id)!.embedding, card.sourcePath, card.contentHash, this.client.fingerprint,
+          card.embeddingHash, JSON.stringify(card.source));
         this.database.exec("COMMIT");
       } catch (error) { this.database.exec("ROLLBACK"); throw error; }
       this.state = { status: "ready", count: cards.length, model: this.client.model };
@@ -114,7 +131,8 @@ export class KnowledgeStore implements ProbeKnowledge {
       const rows = this.database.prepare("SELECT * FROM knowledge_chunks").all() as Row[];
       const hits = rows.filter((row) => (!query.fieldKind || JSON.parse(row.field_kinds).includes(query.fieldKind)) &&
         (!query.targetDepth || JSON.parse(row.depth_levels).includes(query.targetDepth)))
-        .map((row) => ({ id: row.id, kind: row.kind, text: row.text, sourcePath: row.source_path, score: cosine(vector, decode(row.embedding)) }))
+        .map((row) => ({ id: row.id, kind: row.kind, text: row.text, sourcePath: row.source_path,
+          source: JSON.parse(row.source_metadata) as KnowledgeSource, score: cosine(vector, decode(row.embedding)) }))
         .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, 3);
       if (span) telemetry!.finish(span, { retrieval: { ...query, hits, referencedIds: [], localDurationMs: performance.now() - started } });
       return hits;

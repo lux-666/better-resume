@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, writeFileSync, rmSync, unlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,7 +47,7 @@ test("retrieval filters metadata before ranking and records timings, text and ex
   const { root, database } = fixture(t);
   writeFileSync(join(root, "rag.md"), card("rag", "RAG"));
   writeFileSync(join(root, "memory.md"), card("memory", "memory", ["failure"], [5]));
-  const client = { fingerprint: "a", model: "a", embed: async (inputs: string[]) => inputs.map((text) => text === "memory" ? [0, 1] : [1, 0]) };
+  const client = { fingerprint: "a", model: "a", embed: async (inputs: string[]) => inputs.map((text) => text.endsWith("memory") ? [0, 1] : [1, 0]) };
   const knowledge = new KnowledgeStore(database, client); await knowledge.index(root);
   const telemetry = new TelemetryCollector();
   assert.deepEqual((await knowledge.retrieve({ query: "RAG", fieldKind: "mechanism", targetDepth: 3 }, { telemetry })).map((hit) => hit.id), ["rag"]);
@@ -85,4 +85,31 @@ test("embedding client sends an independent request, restores response order and
   for (const invalid of [[], [{ index: 1, embedding: [1, 0] }], [{ index: 0, embedding: [0, 0] }], [{ index: 0, embedding: [null, 1] }]]) {
     response = { data: invalid }; await assert.rejects(client.embed(["a"]));
   }
+});
+test("legacy index rebuilds semantic inputs once and retains source-only edits without embedding", async (t) => {
+  const { root, database } = fixture(t);
+  database.exec(`CREATE TABLE knowledge_chunks(id TEXT PRIMARY KEY, kind TEXT NOT NULL, domains TEXT NOT NULL, field_kinds TEXT NOT NULL,
+    depth_levels TEXT NOT NULL, text TEXT NOT NULL, embedding BLOB NOT NULL, source_path TEXT NOT NULL, content_hash TEXT NOT NULL, embedding_fingerprint TEXT NOT NULL)`);
+  database.prepare("INSERT INTO knowledge_chunks VALUES(?,?,?,?,?,?,?,?,?,?)").run("one", "competency", '["ai"]', '["mechanism"]', '[3,4]', "old", Buffer.alloc(16), "one.md", "old", "a");
+  const path = join(root, "one.md");
+  const raw = card("one", "# 幂等\n本项目整理：追问执行结果未知时的恢复路径。").replace('kind: "competency"', 'kind: "competency"\nsourceUrl: "https://example.com/old"\nsourceCommit: "commit-a"\noriginalQuestion: "如何避免重复提交？"\nsourceFocus: "checkpoint 与幂等"');
+  writeFileSync(path, raw);
+  const inputs: string[] = [];
+  const client = { fingerprint: "a", model: "a", embed: async (texts: string[]) => { inputs.push(...texts); return texts.map(() => [1, 0]); } };
+  const knowledge = new KnowledgeStore(database, client);
+  assert.equal((await knowledge.index(root)).indexed, 1);
+  assert.match(inputs[0], /领域：ai/); assert.match(inputs[0], /字段：mechanism/);
+  assert.match(inputs[0], /如何避免重复提交/); assert.match(inputs[0], /checkpoint 与幂等/);
+  assert.match(inputs[0], /本项目整理/); assert.doesNotMatch(inputs[0], /example.com|commit-a|id:|one/);
+  writeFileSync(path, raw.replace("example.com/old", "example.com/new").replace("commit-a", "commit-b"));
+  assert.equal((await new KnowledgeStore(database, client).index(root)).skipped, 1);
+  assert.equal(inputs.length, 1);
+  const stored = database.prepare("SELECT content_hash,source_metadata FROM knowledge_chunks").get() as { content_hash: string; source_metadata: string };
+  assert.equal(stored.content_hash, readKnowledgeCards(root)[0].contentHash);
+  assert.equal(JSON.parse(stored.source_metadata).sourceCommit, "commit-b");
+  const [hit] = await knowledge.retrieve({ query: "重复提交" });
+  assert.equal(hit.source?.sourceUrl, "https://example.com/new");
+  assert.equal(hit.source?.originalQuestion, "如何避免重复提交？");
+  writeFileSync(path, readFileSync(path, "utf8").replace('["ai"]', '["reliability"]'));
+  assert.equal((await knowledge.index(root)).indexed, 1);
 });

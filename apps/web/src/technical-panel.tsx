@@ -64,6 +64,12 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
             {span.retrieval.fallback && <p>检索不可用，已回退静态追问策略。</p>}
             {span.retrieval.hits.map((hit) => <details key={hit.id}><summary>{hit.id} · 相似度 {hit.score.toFixed(3)} · {span.retrieval!.referencedIds.includes(hit.id) ? "已引用" : "未引用"}</summary>
               <p>{hit.sourcePath}</p><pre style={{ whiteSpace: "pre-wrap" }}>{hit.text}</pre>
+              {hit.source && <details><summary>上游素材与来源</summary>
+                <p>原题：{hit.source.originalQuestion ?? "未记录"}</p>
+                <p>原始考察点：{hit.source.sourceFocus ?? "未记录"}</p>
+                {hit.source.sourceUrl && /^https?:\/\//.test(hit.source.sourceUrl) && <a href={hit.source.sourceUrl} target="_blank" rel="noreferrer">{hit.source.sourceTitle ?? "原文"}</a>}
+                <p>来源版本：{hit.source.sourceCommit ?? "未记录"}</p>
+              </details>}
             </details>)}
             {!span.retrieval.hits.length && !span.retrieval.fallback && <p>没有匹配的知识卡片。</p>}
           </section>}

@@ -2,13 +2,18 @@ import { Type, type Static } from "typebox";
 
 const optionalNumber = () => Type.Optional(Type.Number({ minimum: 0 }));
 const statuses = Type.Union([Type.Literal("running"), Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("timed_out"), Type.Literal("interrupted")]);
+export const KnowledgeSourceSchema = Type.Object({
+  sourceUrl: Type.Optional(Type.String()), sourceCommit: Type.Optional(Type.String()), sourceTitle: Type.Optional(Type.String()),
+  originalQuestion: Type.Optional(Type.String()), sourceFocus: Type.Optional(Type.String()), sourceExplanation: Type.Optional(Type.String()),
+}, { additionalProperties: false });
+export type KnowledgeSource = Static<typeof KnowledgeSourceSchema>;
 export const TelemetrySpanSchema = Type.Object({
   traceId: Type.String(), spanId: Type.String(), parentSpanId: Type.Optional(Type.String()),
   sessionId: Type.Optional(Type.String()), commandId: Type.Optional(Type.String()), turnId: Type.Optional(Type.String()),
   kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state"), Type.Literal("retrieval"), Type.Literal("embedding")]),
   retrieval: Type.Optional(Type.Object({
     query: Type.String(), fieldKind: Type.Optional(Type.String()), targetDepth: Type.Optional(Type.Number()),
-    hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), sourcePath: Type.String() })),
+    hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), sourcePath: Type.String(), source: Type.Optional(KnowledgeSourceSchema) })),
     referencedIds: Type.Array(Type.String()), localDurationMs: optionalNumber(), fallback: Type.Optional(Type.Literal("static_playbook")),
   }, { additionalProperties: false })),
   operation: Type.String(), startedAt: Type.String(), endedAt: Type.Optional(Type.String()),

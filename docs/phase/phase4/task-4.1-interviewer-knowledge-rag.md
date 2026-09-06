@@ -2,7 +2,7 @@
 
 [返回 Phase 4](README.md)
 
-**状态：20 题试用链路已实现；完整 100 条查询与人工追问 Rubric 尚待扩大验收。**
+**状态：20 张面试官核验卡已落地，进入少量试用、按反馈迭代阶段。暂不以完整 100 条查询或人工 Rubric 作为当前推进门槛。**
 
 本轮范围按用户要求缩为 [20 张 AI Agent 题库卡片](../../../knowledge/README.md)，不扩成 300 条。四类既有 playbook 保留作无检索降级；策略拆条和独立 tradeoff 库留待下一批。
 
@@ -25,7 +25,7 @@
 ## 索引与检索
 
 - 嵌入：通过现有 `openai_compatible` Provider 的 embeddings 接口，模型由 `LLM_EMBEDDING_MODEL` 配置，支持独立 `LLM_EMBEDDING_BASE_URL` / `LLM_EMBEDDING_API_KEY`（为空时继承对话配置）；未配置时检索工具不可用，Agent 退回 3.1 静态注入，健康接口标明；
-- 存储：`node:sqlite` 新表 `knowledge_chunks(id, kind, domains, field_kinds, depth_levels, text, embedding BLOB, source_path, content_hash, embedding_fingerprint)`；启动时按 `content_hash` 增量重建，更换模型/端点时全量重建，删除卡片同步清理；
+- 存储：`node:sqlite` 新表 `knowledge_chunks(id, kind, domains, field_kinds, depth_levels, text, embedding BLOB, source_path, content_hash, embedding_fingerprint, embedding_hash, source_metadata)`；启动时按实际语义输入的 `embedding_hash` 增量生成向量；`content_hash` 跟踪全文件变化，来源元数据单独更新；更换模型/端点时全量重建，删除卡片同步清理；
 - 检索：纯 JS 余弦相似度加元数据过滤，先按 `fieldKinds` 与 `depthLevels` 过滤再排序，返回 Top-3；300 条规模下单次检索目标 < 20ms；
 - 查询构造：由 Interview Agent 显式调用，不由系统隐式拼接，保持 Agent 是主驾驶。
 
@@ -51,7 +51,12 @@ retrieve_probe_knowledge({
 
 复用统一 Trace/Span：查询嵌入与本地检索分别计时（<20ms 仅指本地检索）；记录不可用、失败和降级状态。Telemetry 新增 `retrieval` span：查询、过滤条件、命中 ID 与分数、耗时、是否被 `ask_candidate` 引用。技术视图展示本轮检索与引用关系。
 
-## 评测
+## 当前迭代与评测
+
+当前以少量查询、单组真实提问对照和几轮实际体验推动，不扩大 benchmark。每轮关注“有没有命中对应机制”“能否问出一个具体核验点”“是否暗含未确认前提”。改卡后运行 `--smoke` 即可记录观察，不把百分比作为发布门槛。
+
+以下完整评测保留作后续规模化验收规划，当前不阻塞卡片与面试体验迭代：
+
 
 - 冻结查询集：从 Phase 1–3 真实 Session 与固定 Profile 中抽取 100 条候选人机制短语，人工标注期望命中的知识条目；
 - 指标：Top-1 / Top-3 命中率、无关命中率、平均耗时；
@@ -66,7 +71,9 @@ retrieve_probe_knowledge({
 - 检索只提供给 Interview Agent，不注入 Report Agent，也不作为 Evidence 数据源；Evidence 的 `sourceQuote` 继续逐字核验候选人 Answer。候选人自己说出的相同技术术语可以成为证据，不能按文本相似度一律排除；`statement` 语义是否忠实仍属于原有报告质量评估。
 
 
-## 20 题试用结果（2026-09-05）
+## 初版历史结果（2026-09-05，原题＋考察点版本）
+
+以下数字和问题对只对应初版，不能视作当前核验卡的评测结果。
 
 - 模型：`qwen3.7-text-embedding-flash`，实际向量维度 1024；20 张卡片全部建索引。
 - 冻结查询：[phase4-knowledge-pilot.json](../../../data/evaluation-corpus/phase4-knowledge-pilot.json)，20 条人工编写的改写短语。不是 100 条真实 Session benchmark。
@@ -87,3 +94,13 @@ retrieve_probe_knowledge({
 | prompt-cache | 在这项优化中，你本人实际做的第一个具体改动是什么？ | 你具体怎样组织请求内容，才能让需要复用的前缀保持一致并获得缓存命中？ |
 
 验证：`npm test` 79/79 通过，typecheck/build 通过；浏览器中已检查知识索引状态、查询/过滤、命中正文、相似度及已引用标记。
+
+
+## 面试官核验卡迭代（2026-09-06）
+
+- 20 张卡片各选一个核验焦点，正文约 200–245 字；保留原题、原始考察点、sourceUrl/sourceCommit，并明确区分上游素材与本项目整理。
+- embedding 使用领域、字段类型、原题、考察点与核验正文；ID、URL、commit、hash 只作元数据。旧 SQLite 索引可自动升级。
+- 浅层回答只作为下一步核验线索；例如“用了幂等键”会引导追问外部操作成功但 checkpoint 未写入的故障窗口，而不是直接判定候选人不懂幂等。
+- 本轮仅运行 3 条检索和 1 组问题对照；结果用于选择下一轮改卡方向，不宣称建立了质量提升结论。
+
+本轮观察：3 条检索均 Top-1 命中目标卡；幂等问题对照中有检索侧调用 1 次并引用 Q17，提出“如果订单接口已经成功、但 checkpoint 写入前进程崩溃，你们恢复时用什么方法判断这次订单是否需要重放？”。详细结果在 `data/evaluations/phase4-knowledge-smoke.json` 与 `phase4-knowledge-questions-smoke.json`。

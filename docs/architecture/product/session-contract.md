@@ -54,6 +54,6 @@ validate command
 
 应用从 GitHub 下载后在本机运行，不引入联网服务账户。已有 Session 数据持续存入 SQLite；历史列表/删除入口属于 Phase 4.4。
 
-`knowledge_chunks` 保存可重建的公共知识卡片、来源、元数据、内容哈希、embedding 模型指纹及 Float64 BLOB。启动后台索引期间或失败时提供静态追问策略，健康接口区分 unconfigured/indexing/ready/failed。只有完整索引事务提交后才可检索；失败不影响 Session 或已接受 Evidence。
+`knowledge_chunks` 保存可重建的公共知识卡片、来源、元数据、完整文件与语义输入哈希、embedding 模型指纹及 Float64 BLOB。上游原题、考察点、URL/commit 单独保存在 `source_metadata`，随命中写入 Trace；URL/commit 不参与 embedding。来源变化更新元数据，语义输入变化才重建向量。启动后台索引期间或失败时提供静态追问策略，健康接口区分 unconfigured/indexing/ready/failed。只有完整索引事务提交后才可检索；失败不影响 Session 或已接受 Evidence。
 
 技术视图同时显示当前索引状态和所选执行的历史 retrieval/embedding Span。命中快照保存在 Trace；知识 ID 引用保存在已接受 Decision 中，后续卡片变更不改变旧 Trace 的命中文本。

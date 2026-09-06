@@ -13,7 +13,8 @@ const cases = [
   { id: "prompt-cache", answer: "我负责模型调用成本优化。我们保留相同的系统提示前缀，通过 prompt caching 复用缓存，观察输入费用和首 token 延迟。" },
 ];
 const database = new DatabaseSync(resolve(process.env.DATABASE_PATH ?? "data/better-resume.db"));
-const output = resolve("data/evaluations/phase4-knowledge-questions.json");
+const smoke = process.argv.includes("--smoke");
+const output = resolve(`data/evaluations/phase4-knowledge-questions${smoke ? "-smoke" : ""}.json`);
 const results: unknown[] = [];
 try {
   const runtime = configuredRuntimes().interview;
@@ -22,6 +23,7 @@ try {
   await knowledge.index(fileURLToPath(new URL("../../../knowledge", import.meta.url)));
   if (knowledge.health().status !== "ready") throw new Error("Knowledge must be ready for the comparison");
   for (const sample of cases) {
+    if (smoke && sample.id !== "idempotency") continue;
     const intake = { candidate: { name: "冻结试验", skills: ["AI Agent", "RAG"], projects: [{ name: "AI 应用工程", description: "负责模型应用的开发、评估和运行优化。" }] }, job: { title: "AI 应用工程师", introduction: "开发可靠的 AI 应用", responsibilities: "设计并实现 AI 应用，评估效果与工程可靠性。", requirements: "能够解释实际实现与技术取舍。" } };
     const role = buildInterviewRole({ job: intake.job });
     const frozen = createInterviewState(`knowledge-${sample.id}`, role, buildCandidateFromIntake(intake, role), intake);
@@ -36,7 +38,8 @@ try {
       console.log(JSON.stringify({ id: sample.id, enabled, question: decision.question, knowledgeIds: decision.knowledgeIds ?? [],
         retrievals: telemetry.trace.spans.filter((span) => span.kind === "retrieval").length }));
       mkdirSync(dirname(output), { recursive: true });
-      writeFileSync(output, JSON.stringify({ model: runtime.modelId, results, limitation: "Three synthetic frozen states; human rubric pending; this does not establish a quality improvement." }, null, 2));
+      writeFileSync(output, JSON.stringify({ createdAt: new Date().toISOString(), model: runtime.modelId, results,
+        limitation: `${smoke ? "One" : "Three"} synthetic frozen states; no human scoring; this does not establish a quality improvement.` }, null, 2));
     }
   }
   console.log(`Saved question pairs and traces: ${output}`);

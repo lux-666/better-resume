@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 import type { TelemetryCollector } from "./telemetry.ts";
-import type { KnowledgeStatus } from "../../api-contract/src/telemetry.ts";
+import type { KnowledgeSource, KnowledgeStatus } from "../../api-contract/src/telemetry.ts";
 export type { KnowledgeStatus } from "../../api-contract/src/telemetry.ts";
 export const KnowledgeQuerySchema = Type.Object({
   query: Type.String({ minLength: 1, maxLength: 1000 }),
@@ -8,7 +8,7 @@ export const KnowledgeQuerySchema = Type.Object({
   targetDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
 }, { additionalProperties: false });
 export type KnowledgeQuery = Static<typeof KnowledgeQuerySchema>;
-export type KnowledgeHit = { id: string; kind: string; text: string; score: number; sourcePath: string };
+export type KnowledgeHit = { id: string; kind: string; text: string; score: number; sourcePath: string; source?: KnowledgeSource };
 export interface ProbeKnowledge {
   health(): KnowledgeStatus;
   retrieve(query: KnowledgeQuery, context?: { telemetry?: TelemetryCollector; signal?: AbortSignal }): Promise<KnowledgeHit[]>;
