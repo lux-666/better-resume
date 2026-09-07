@@ -3,7 +3,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent, StreamFn } from "@earendil-works/pi-agent-core";
 import type { RunStatus, TelemetrySpan, TelemetryTrace } from "../../api-contract/src/telemetry.ts";
 export type { TelemetrySpan, TelemetryTrace } from "../../api-contract/src/telemetry.ts";
-export type TelemetryErrorKind = "api_error" | "tool_error" | "state_error" | "runtime_error" | "aborted";
+type TelemetryErrorKind = "api_error" | "tool_error" | "state_error" | "runtime_error" | "aborted";
 type TraceIds = Pick<TelemetryTrace, "sessionId" | "commandId" | "turnId" | "operation" | "stateVersion">;
 
 export class TelemetryCollector {

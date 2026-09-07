@@ -1,9 +1,10 @@
+import { requirementLines } from "./intake.ts";
 import { Check } from "typebox/value";
 import { RolePackSchema, type RolePack, type RequirementMatrix } from "./phase4-schema.ts";
 import type { InterviewState, ReportField } from "./types.ts";
 import { fieldConclusion } from "./investigation.ts";
 const generic = ["ownership", "mechanism", "measurement", "failure"];
-export function jdLines(state: InterviewState): string[] { return [...new Set((state.intake.job?.requirements ?? "").split("\n").map((line) => line.trim()).filter(Boolean))]; }
+export function jdLines(state: InterviewState): string[] { return requirementLines(state.intake.job?.requirements); }
 function plannedFields(state: InterviewState, pack: RolePack): ReportField[] {
   return state.candidate.projects.flatMap((project) => pack.fieldPlan.filter((plan) => plan.appliesToProjects === "all" || plan.requirementIds.some((id) => pack.projectRelevance[project.id]?.includes(id))).map((plan) => ({
     id: `${project.id}:${plan.fieldKind}`, projectId: project.id, competencyId: plan.competencyId, name: plan.name,

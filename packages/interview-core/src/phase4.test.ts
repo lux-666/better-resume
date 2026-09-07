@@ -59,7 +59,8 @@ test("14-turn source-derived summary stays within 1500 chars and retains grounde
     const evidence = state.evidence.find((e) => e.id === line.evidenceId)!; assert.equal(evidence.projectId, part.projectId);
     assert.ok(state.turns.find((t) => t.id === evidence.turnId)!.answer.includes(line.text));
   }
-  assert.deepEqual(buildSummary({ ...state, memory: { summary: { ...summary, version: 999 } } }), summary);
+  const legacySnapshot = { ...state, memory: { summary: { ...summary, version: 999 } } };
+  assert.deepEqual(buildSummary(legacySnapshot), summary);
   state.timeBudgetMinutes = 20; state.startedAt = new Date(Date.now() - 21 * 60_000).toISOString();
   assert.equal(validateCompletion(state).forced, true);
 });

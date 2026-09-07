@@ -1,5 +1,7 @@
 import type { Claim, DepthLevel, InterviewState, InterviewTurn, Lead, LeadProposal } from "./types.ts";
-export const depthLabels = ["陈述", "细节", "依据", "取舍", "迁移"] as const;
+export function interviewTimeBudgetExhausted(state: Pick<InterviewState, "startedAt" | "timeBudgetMinutes">, now = Date.now()): boolean {
+  return Boolean(state.startedAt && state.timeBudgetMinutes && now - Date.parse(state.startedAt) >= state.timeBudgetMinutes * 60_000);
+}
 export function answerTurnCount(state: InterviewState): number { return state.turns.filter((turn) => turn.kind !== "supplement").length; }
 export function fieldConclusion(state: InterviewState, fieldId: string) {
   const evidence = state.evidence.filter((item) => item.reportFieldIds.includes(fieldId));

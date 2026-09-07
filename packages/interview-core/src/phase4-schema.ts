@@ -20,8 +20,9 @@ export const RolePackSchema = Type.Object({
   projectRelevance: Type.Record(Type.String(), Type.Array(id(), { uniqueItems: true })),
 }, { additionalProperties: false });
 export type RolePack = Static<typeof RolePackSchema>;
+export const RequirementStatusSchema = Type.Union([Type.Literal("supported"), Type.Literal("partial"), Type.Literal("weak"), Type.Literal("contradicted"), Type.Literal("not_investigated")]);
 export const RequirementMatrixSchema = Type.Array(Type.Object({ requirementId: id(), text: Type.String(), priority: Type.Union([Type.Literal("must"), Type.Literal("should"), Type.Literal("nice")]),
-  status: Type.Union([Type.Literal("supported"), Type.Literal("partial"), Type.Literal("weak"), Type.Literal("contradicted"), Type.Literal("not_investigated")]),
+  status: RequirementStatusSchema,
   reachedDepth: Type.Optional(Type.Number()), evidenceIds: Type.Array(Type.String()), projectIds: Type.Array(Type.String()),
 }));
 export type RequirementMatrix = Static<typeof RequirementMatrixSchema>;

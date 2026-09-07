@@ -1,8 +1,8 @@
-import { SummarySchema, RolePackSchema, RequirementMatrixSchema } from "../../interview-core/src/phase4-schema.ts";
+import { RolePackSchema, RequirementMatrixSchema } from "../../interview-core/src/phase4-schema.ts";
 import { ReportNarrativeSchema } from "./narrative.ts";
 import { DepthLevelSchema, DispositionSchema, LeadSchema, FieldConclusionSchema, ProjectedLeadSchema } from "./investigation.ts";
 import { Type, type Static } from "typebox";
-import type { InterviewProgress, InterviewState, InterviewStep } from "../../interview-core/src/index.ts";
+import type { InterviewState } from "../../interview-core/src/index.ts";
 
 const ClaimSchema = Type.Object({
   id: Type.String(),
@@ -161,12 +161,16 @@ const TaskExecutionTraceSchema = Type.Object({
   retryCount: Type.Integer({ minimum: 0 }),
 }, { additionalProperties: false });
 
-const StepExecutionTraceSchema = Type.Object({
+export const RuntimeInfoSchema = Type.Object({
   mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
   reportModelId: Type.Optional(Type.String()),
   interviewModelId: Type.Optional(Type.String()),
+}, { additionalProperties: false });
+
+const StepExecutionTraceSchema = Type.Object({
+  ...RuntimeInfoSchema.properties,
   evidence: Type.Optional(TaskExecutionTraceSchema),
   question: Type.Optional(TaskExecutionTraceSchema),
 }, { additionalProperties: false });
@@ -189,7 +193,7 @@ const DecisionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStateSchema = Type.Object({
-  memory: Type.Optional(Type.Object({ summary: SummarySchema })), rolePack: Type.Optional(RolePackSchema), rolePackFailure: Type.Optional(Type.String()), resumeIndexFailure: Type.Optional(Type.String()),
+  rolePack: Type.Optional(RolePackSchema), rolePackFailure: Type.Optional(Type.String()), resumeIndexFailure: Type.Optional(Type.String()),
   timeBudgetMinutes: Type.Optional(Type.Integer({ minimum: 20, maximum: 60 })), startedAt: Type.Optional(Type.String()),
   phaseVersion: Type.Optional(Type.Literal(3)),
   leads: Type.Optional(Type.Array(LeadSchema)),
@@ -247,13 +251,7 @@ export const ApiErrorSchema = Type.Object({
   retryable: Type.Boolean(),
 }, { additionalProperties: false });
 
-export const RuntimeInfoSchema = Type.Object({
-  mode: Type.Union([Type.Literal("demo"), Type.Literal("llm")]),
-  provider: Type.Optional(Type.String()),
-  modelId: Type.Optional(Type.String()),
-  reportModelId: Type.Optional(Type.String()),
-  interviewModelId: Type.Optional(Type.String()),
-}, { additionalProperties: false });
+
 
 export const InterviewProgressSchema = Type.Object({
   stage: Type.Union([Type.Literal("not_started"), Type.Literal("interviewing"), Type.Literal("completed")]),
@@ -271,11 +269,7 @@ const CandidateReportEvidenceReferenceSchema = Type.Object({
   turnId: Type.String(),
   question: Type.String(),
   answerQuote: Type.String(),
-  statement: Type.String(),
-  polarity: Type.Union([Type.Literal("support"), Type.Literal("weakness"), Type.Literal("invalidate")]),
-  strength: Type.Number({ minimum: 0, maximum: 1 }),
-  specificity: Type.Number({ minimum: 0, maximum: 1 }),
-  evaluatorConfidence: Type.Number({ minimum: 0, maximum: 1 }),
+  ...Type.Pick(EvidenceSchema, ["statement", "polarity", "strength", "specificity", "evaluatorConfidence"]).properties,
 }, { additionalProperties: false });
 
 const CandidateReportFieldOutputSchema = Type.Object({
@@ -395,12 +389,7 @@ export const InterviewStateResponseSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStepResponseSchema = Type.Object({
-  resume: Type.Optional(Type.Object({ resumeIndexed: Type.Boolean(), chunkCount: Type.Number() })),
-  state: InterviewStateSchema,
-  stateVersion: Type.Integer({ minimum: 0 }),
-  runtime: RuntimeInfoSchema,
-  progress: InterviewProgressSchema,
-  questionId: Type.Optional(Type.String({ minLength: 1 })),
+  ...InterviewStateResponseSchema.properties,
   commandId: Type.Optional(Type.String({ minLength: 1 })),
   decision: InterviewDecisionSchema,
   question: Type.Optional(Type.String()),
@@ -413,22 +402,7 @@ export type ApiError = Static<typeof ApiErrorSchema>;
 export type RuntimeInfo = Static<typeof RuntimeInfoSchema>;
 export type InterviewReportResponse = Static<typeof InterviewReportResponseSchema>;
 
-export interface InterviewStateResponse {
-  resume?: { resumeIndexed: boolean; chunkCount: number };
-  state: InterviewState;
-  stateVersion: number;
-  runtime: RuntimeInfo;
-  progress: InterviewProgress;
-  questionId?: string;
-  pendingCommand?: AnswerCommand;
-  pendingSupplement?: AnswerCommand & { projectId: string };
-}
-
-export interface InterviewStepResponse extends InterviewStateResponse {
-  commandId?: string;
-  decision: InterviewStep["decision"];
-  question?: string;
-  evidence: InterviewStep["evidence"];
-}
+export type InterviewStateResponse = Static<typeof InterviewStateResponseSchema>;
+export type InterviewStepResponse = Static<typeof InterviewStepResponseSchema>;
 
 export interface SessionHistoryItem { sessionId: string; candidateName: string; roleName: string; status: InterviewState["status"]; turnCount: number; createdAt: string; updatedAt: string }

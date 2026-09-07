@@ -18,7 +18,7 @@ Interview Agent 的输入是最近四轮加轻量字段索引；Report Agent 只
 
 ### 滚动摘要
 
-`InterviewState` 新增 `memory.summary`：
+`buildSummary(State)` 生成只用于本次 Agent 输入的摘要，不持久化为第二份会话状态：
 
 ```ts
 interface InterviewSummary {
@@ -35,9 +35,9 @@ interface InterviewSummary {
 }
 ```
 
-每轮接受回答后，由 Core 从当前 State 确定性生成摘要，再随整条命令提交；不增加 LLM 摘要调用。摘录逐条校对原始 Answer 与 evidenceId，JSON 总长不超过 1500 字符，超出部分省略并标记 `truncated`。同一项目最多五条原话摘录，每条最多 100 字符；候选人风格仅记录作答/澄清次数，不作判断。
+Interview Agent 每次决策前，由 Core 从当前 State 确定性生成摘要；同一摘要用于模型输入和遥测统计，不增加 LLM 摘要调用，也不写入 State。摘录逐条校对原始 Answer 与 evidenceId，JSON 总长不超过 1500 字符，超出部分省略并标记 `truncated`。同一项目最多五条原话摘录，每条最多 100 字符；候选人风格仅记录作答/澄清次数，不作判断。
 
-`version` 为生成时的 turns.length，`sourceStateVersion` 为生成时的 traces.length：回答已在内存接受、下一次 Decision 尚未追加时，二者不是同一个计数。失败的整条命令不提交摘要。Interview Agent 输入重新从 State 生成摘要，不信任旧摘要中的事实，配合最近两轮回答（每轮最多 4000 字符并标记截断）。
+`version` 为生成时的 turns.length，`sourceStateVersion` 为生成时的 traces.length：回答已在内存接受、下一次 Decision 尚未追加时，二者不是同一个计数。失败尝试的摘要统计保留在对应失败 Trace 中，但不会成为后续事实。旧会话中的 memory 缓存在加载时丢弃，回答与证据完整保留。摘要配合最近两轮回答（每轮最多 4000 字符并标记截断）。
 
 ### 语义索引
 
@@ -92,7 +92,7 @@ recall({
 
 ## 验收
 
-- 摘要每轮确定性更新，摘录逐字核验、超预算部分不加入；
+- 摘要在每次实际 Interview Agent 决策前确定性生成，摘录逐字核验、超预算部分不加入；
 - 删除 `session_chunks` 后从 State 全量重建结果一致；
 - `long_horizon` 与 `repeat_guard` 通过 Gate；
 - 现有七个 Profile 与三个发布场景不退化。

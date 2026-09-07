@@ -1,4 +1,4 @@
-import type { InterviewSummary, RolePack } from "./phase4-schema.ts";
+import type { RolePack } from "./phase4-schema.ts";
 export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW" | "CLARIFY_QUESTION" | "RECORD_SUPPLEMENT";
 
 export interface Claim {
@@ -193,7 +193,6 @@ export interface InterviewProgress {
 }
 
 export interface InterviewState {
-  memory?: { summary: InterviewSummary };
   rolePack?: RolePack;
   rolePackFailure?: string;
   resumeIndexFailure?: string;

@@ -19,8 +19,8 @@ export type ModelRuntime = {
   streamFn?: StreamFn;
 };
 
-export type AgentModelIds = { reportModelId: string; interviewModelId: string };
-export type RoutingModelIds = { weakModelId: string; strongModelId: string };
+type AgentModelIds = { reportModelId: string; interviewModelId: string };
+type RoutingModelIds = { weakModelId: string; strongModelId: string };
 
 function value(env: NodeJS.ProcessEnv, name: string): string | undefined {
   return env[name]?.trim() || undefined;

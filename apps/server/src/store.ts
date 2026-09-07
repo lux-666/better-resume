@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { AnswerCommand, InterviewStepResponse } from "../../../packages/api-contract/src/index.ts";
 import type { InterviewState } from "../../../packages/interview-core/src/index.ts";
 import type { TelemetryTrace } from "../../../packages/api-contract/src/telemetry.ts";
-import { hydrateState, questionId, stateVersion } from "./session.ts";
+import { discardLegacySummary, hydrateState, questionId, stateVersion } from "./session.ts";
 import { HttpError } from "./http.ts";
 type CommandRow = { intent: string; question_id: string; expected_state_version: number; answer: string; status: string; response: string | null };
 const commandTable = (name: string) => `CREATE TABLE ${name}(session_id TEXT NOT NULL, command_id TEXT NOT NULL, question_id TEXT NOT NULL,
@@ -70,7 +70,11 @@ export class InterviewStore {
     if (existing && (existing.question_id !== command.questionId || existing.expected_state_version !== command.expectedStateVersion || existing.answer !== command.answer || existing.intent !== (command.intent ?? "answer"))) {
       throw new HttpError(409, "STATE_CONFLICT", "commandId was already used with different input");
     }
-    if (existing?.status === "completed" && existing.response) return { owner: "", replay: JSON.parse(existing.response) };
+    if (existing?.status === "completed" && existing.response) {
+      const replay = JSON.parse(existing.response) as InterviewStepResponse;
+      if (replay.state) discardLegacySummary(replay.state);
+      return { owner: "", replay };
+    }
     if (existing?.status === "rejected" && existing.response) {
       const failure = JSON.parse(existing.response) as { status: number; code: HttpError["code"]; message: string };
       throw new HttpError(failure.status, failure.code, failure.message, false);

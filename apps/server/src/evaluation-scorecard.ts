@@ -1,5 +1,5 @@
 import { summarizeTelemetry } from "../../../packages/api-contract/src/telemetry-summary.ts";
-import type { AnswerDisposition, EvidenceProposal, InterviewState } from "../../../packages/interview-core/src/index.ts";
+import type { InterviewState } from "../../../packages/interview-core/src/index.ts";
 import type { TelemetryTrace } from "../../../packages/pi-runtime/src/index.ts";
 import type { EvaluationTurn, GateFailure } from "./evaluation-gates.ts";
 
@@ -161,8 +161,3 @@ export function renderEvaluationScorecard(scorecard: ReturnType<typeof buildEval
     "Manual rubric fields remain null until a reviewer records ratings and reasons.",
   ].join("\n");
 }
-
-export type GoldEvaluationTurn = {
-  expectedDisposition?: AnswerDisposition;
-  expectedEvidence?: EvidenceProposal[];
-};

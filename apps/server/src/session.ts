@@ -1,5 +1,11 @@
 import { createLegacyInterviewRole, normalizeInterviewIntake, type InterviewState } from "../../../packages/interview-core/src/index.ts";
+export function discardLegacySummary(state: InterviewState): InterviewState {
+  // Applies to both stored State and immutable command replay payloads.
+  delete (state as InterviewState & { memory?: unknown }).memory;
+  return state;
+}
 export function hydrateState(state: InterviewState): InterviewState {
+  discardLegacySummary(state);
   if (!state.role) state.role = createLegacyInterviewRole(state.roleId, state.candidate);
   state.intake = normalizeInterviewIntake({
     candidate: {

@@ -65,7 +65,7 @@ validate command
 
 ## 会话记忆与岗位调查
 
-`memory.summary` 是 1500 字符内的确定性原话摘录，来源为当前 State。两个 Agent 可按需 recall，先读取 Report，每轮各最多两次（跨重试与备用模型共享预算）。会话向量仅作缓存；正文从本次 State 投影，不能使用未提交结果构造事实。跨项目纠正默认不限定 projectId。
+`buildSummary(State)` 生成 1500 字符内的确定性原话摘录，只用于当前 Agent 输入并记录同份摘要统计；不持久化，旧会话缓存加载时丢弃。两个 Agent 可按需 recall，先读取 Report，每轮各最多两次（跨重试与备用模型共享预算）。会话向量仅作缓存；正文从本次 State 投影，不能使用未提交结果构造事实。跨项目纠正默认不限定 projectId。
 
 提供 JD 时创建 Role Pack，逐条保留要求原文并冻结字段与能力映射；失败会在草稿、页面与报告中明确说明使用通用调查。`requirementMatrix` 从 Field/Evidence 确定性派生，冲突优先，must 冲突不允许直接进入下一招聘环节。Role Pack 和检索信息都不是 Evidence。
 

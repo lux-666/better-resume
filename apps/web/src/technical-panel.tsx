@@ -21,7 +21,7 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
   if (!data) return <p>{error || "正在读取运行统计…"}</p>;
   const trace = data.traces.find((item) => item.traceId === selected) ?? data.traces.at(-1);
   const summary = data.summary;
-  const answerLatency = summarizeTelemetry(data.traces.filter((t) => t.operation === "answer")).latency;
+  const answerLatency = summary.answerLatency;
   const total = trace?.durationMs ?? (trace ? Date.now() - Date.parse(trace.startedAt) : 1);
   const leads = projectLeads(state);
   const decision = trace?.turnId ? state.traces.find((item) => item.turnId === trace.turnId) : state.traces.at(-1);

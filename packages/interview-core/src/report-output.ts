@@ -9,7 +9,7 @@ import type {
   ReportField,
 } from "./index.ts";
 
-export interface CandidateReportEvidenceReference {
+interface CandidateReportEvidenceReference {
   depthLevel?: DepthLevel;
   evidenceId: string;
   turnId: string;

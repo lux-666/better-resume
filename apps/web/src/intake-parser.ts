@@ -1,22 +1,22 @@
-export type ParsedProject = {
+type ParsedProject = {
   name: string;
   description: string;
 };
 
-export type ParsedResume = {
+type ParsedResume = {
   name?: string;
   skills: string[];
   projects: ParsedProject[];
 };
 
-export type ParsedJobDescription = {
+type ParsedJobDescription = {
   title?: string;
   introduction?: string;
   responsibilities?: string;
   requirements?: string;
 };
 
-export function listItems(value: string): string[] {
+function listItems(value: string): string[] {
   return [...new Set(value.split(/[,，、;；\n|]/).map((item) => item.replace(/^[-*•]\s*/, "").trim()).filter(Boolean))];
 }
 

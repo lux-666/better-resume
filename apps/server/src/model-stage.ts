@@ -1,4 +1,4 @@
-import { EvidenceValidationError, ModelProviderError } from "../../../packages/pi-runtime/src/index.ts";
+import { EvidenceValidationError, ModelProviderError, withOneProviderRetry } from "../../../packages/pi-runtime/src/index.ts";
 import type { TelemetryCollector } from "../../../packages/pi-runtime/src/telemetry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 export async function runModelStage<T>(options: { primary: ModelRuntime; fallback?: ModelRuntime; telemetry: TelemetryCollector; signal: AbortSignal; primaryTimeoutMs?: number;
@@ -6,17 +6,12 @@ export async function runModelStage<T>(options: { primary: ModelRuntime; fallbac
   let attempt = 0; let failure: unknown;
   const timeout = options.fallback ? AbortSignal.timeout(Math.max(1, Math.floor(options.primaryTimeoutMs ?? 30_000))) : undefined;
   const primarySignal = timeout ? AbortSignal.any([options.signal, timeout]) : options.signal;
-  for (let retry = 0; retry < 2; retry++) {
-    try {
-      primarySignal.throwIfAborted();
-      const value = await options.invoke(options.primary, ++attempt, primarySignal);
-      primarySignal.throwIfAborted();
-      return { value, modelId: options.primary.modelId, fallbackUsed: false, attempts: attempt };
-    } catch (error) {
-      options.signal.throwIfAborted(); failure = error;
-      if (primarySignal.aborted || error instanceof EvidenceValidationError) break;
-      if (!(error instanceof ModelProviderError)) throw error;
-    }
+  try {
+    const value = await withOneProviderRetry(() => options.invoke(options.primary, ++attempt, primarySignal), undefined, primarySignal);
+    return { value, modelId: options.primary.modelId, fallbackUsed: false, attempts: attempt };
+  } catch (error) {
+    options.signal.throwIfAborted(); failure = error;
+    if (!primarySignal.aborted && !(error instanceof EvidenceValidationError) && !(error instanceof ModelProviderError)) throw error;
   }
   if (!options.fallback) throw failure;
   const span = options.telemetry.start("fallback_model", "state", undefined, { fallback: { fromModel: options.primary.modelId ?? "unknown", toModel: options.fallback.modelId ?? "unknown", reason: timeout?.aborted ? "timeout" : failure instanceof EvidenceValidationError ? "validation" : "provider", adopted: false } });

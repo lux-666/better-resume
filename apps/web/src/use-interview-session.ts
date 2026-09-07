@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { AnswerCommand, InterviewStateResponse, InterviewStepResponse } from "@better-resume/api-contract";
 import { ApiRequestError, post, request } from "./api.ts";
 import { useRunProgress } from "./use-run-progress.ts";
-export const sessionStorageKey = "better-resume-session-id";
-export type BusyAction = "create" | "start" | "submit";
+const sessionStorageKey = "better-resume-session-id";
+type BusyAction = "create" | "start" | "submit";
 export function useInterviewSession() {
   const [session, setSession] = useState<InterviewStateResponse>();
   const [answer, setAnswer] = useState("");
@@ -85,6 +85,6 @@ export function useInterviewSession() {
       }
     });
   }
-  return { session, setSession, answer, setAnswer, pendingCommandId, setPendingCommandId, busyAction, busyRef,
+  return { session, answer, setAnswer, pendingCommandId, busyAction, busyRef,
     error, setError, restore, clear, open, runOnce, start, submit, run, isProcessing, connection: observation.connection };
 }

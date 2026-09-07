@@ -33,8 +33,8 @@ function structuredJobDescription(job: InterviewIntake["job"]): string {
   ].join("\n\n").slice(0, 8_000);
 }
 
-function requirementLines(value: string | undefined): string[] {
-  return uniqueStrings((value ?? "").split("\n").map((line) => line.replace(/^\s*[-*•\d.)、]+\s*/, "")), 12, 240);
+export function requirementLines(value: string | undefined): string[] {
+  return [...new Set((value ?? "").split("\n").map((line) => line.trim()).filter(Boolean))];
 }
 
 export function buildInterviewRole(options: { job?: InterviewIntake["job"] }): InterviewRole {

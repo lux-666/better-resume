@@ -42,7 +42,7 @@ export function summarizeTelemetry(traces: readonly TelemetryTrace[]) {
     })),
   };
 }
-export function stageForSpan(span: TelemetrySpan): Stage | undefined {
+function stageForSpan(span: TelemetrySpan): Stage | undefined {
   if (span.operation === "report_agent") return "report";
   if (span.operation === "interview_agent") return "interview";
   if (span.operation === "narrative_agent") return "narrative";

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { Check } from "typebox/value";
 import { CreateInterviewBodySchema, type CreateInterviewBody, type InterviewStateResponse, type InterviewReportResponse } from "../../../packages/api-contract/src/index.ts";
-export const demoProfileIds = ["demo-strong", "demo-boundary", "demo-contradictory"] as const;
+const demoProfileIds = ["demo-strong", "demo-boundary", "demo-contradictory"] as const;
 export type DemoProfile = { id: string; label: string; profile: string; intake: CreateInterviewBody; script: Record<string, string> };
 export type DemoReplay = { id: string; recordedAt: string; snapshots: InterviewStateResponse[]; report: InterviewReportResponse };
 export function demoProfiles(): DemoProfile[] {

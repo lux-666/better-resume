@@ -1,3 +1,4 @@
+import { interviewTimeBudgetExhausted } from "../../interview-core/src/investigation.ts";
 import { createHash } from "node:crypto";
 import { buildSummary } from "../../interview-core/src/memory.ts";
 import type { Claim } from "../../interview-core/src/types.ts";
@@ -91,13 +92,15 @@ export class ModelProviderError extends Error {
 export async function withOneProviderRetry<T>(
   operation: () => Promise<T>,
   onRetry?: () => void,
+  signal?: AbortSignal,
 ): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
+  const invoke = async () => { signal?.throwIfAborted(); const value = await operation(); signal?.throwIfAborted(); return value; };
+  try { return await invoke(); }
+  catch (error) {
+    signal?.throwIfAborted();
     if (!(error instanceof ModelProviderError)) throw error;
     onRetry?.();
-    return operation();
+    return invoke();
   }
 }
 
@@ -545,6 +548,12 @@ export async function decideNextStepWithAgent(options: {
       return { content: [{ type: "text", text: "Interview completion accepted." }], details: {}, terminate: true };
     },
   };
+  const summarySpan = options.memory ? options.telemetry?.start("summary_update", "state") : undefined;
+  const summary = options.memory ? buildSummary(options.state) : undefined;
+  if (summary && summarySpan) {
+    options.telemetry!.finish(summarySpan, { summary: { version: summary.version, sourceStateVersion: summary.sourceStateVersion,
+      chars: JSON.stringify(summary).length, truncated: summary.truncated } });
+  }
   const agent = createAgent({
     model: options.model,
     streamFn: options.streamFn,
@@ -581,8 +590,8 @@ export async function decideNextStepWithAgent(options: {
   return runObservedAgent(agent, JSON.stringify({
     completion: validateCompletion(options.state),
     latestAnswer: options.state.turns.at(-1)?.answer.slice(0, options.memory ? 4000 : undefined),
-    ...(options.memory ? { summary: buildSummary(options.state) } : {}),
-    timeBudgetExhausted: Boolean(options.state.startedAt && options.state.timeBudgetMinutes && Date.now() - Date.parse(options.state.startedAt) >= options.state.timeBudgetMinutes * 60_000),
+    ...(summary ? { summary } : {}),
+    timeBudgetExhausted: interviewTimeBudgetExhausted(options.state),
     recentTurns: options.state.turns.slice(options.memory ? -2 : -4).map(({ question, answer, reportFieldId }) => ({
       question, answer: answer.slice(0, options.memory ? 4000 : undefined), reportFieldId, ...(options.memory ? { truncated: answer.length > 4000 } : {}),
     })),

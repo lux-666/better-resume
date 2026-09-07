@@ -17,7 +17,7 @@ import {
   type ModelProfileName,
 } from "../../../packages/interview-core/src/fixed-profiles.ts";
 
-export type FrozenReportCase = {
+type FrozenReportCase = {
   id: string;
   profile: ModelProfileName;
   state: InterviewState;
@@ -84,7 +84,7 @@ function fixtureFingerprint(value: Omit<FrozenReportCase, "fixtureFingerprint">)
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export function buildFrozenReportCases(profile: ModelProfileName): FrozenReportCase[] {
+function buildFrozenReportCases(profile: ModelProfileName): FrozenReportCase[] {
   const state = createInterviewState(`frozen-${profile}`, "llm_application_engineer", createFixtureCandidate(profile));
   const cases: FrozenReportCase[] = [];
   activateInterview(state);

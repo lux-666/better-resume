@@ -16,7 +16,7 @@ import { parseJobDescription, parseResume } from "./intake-parser.ts";
 import "./style.css";
 
 import { ApiRequestError, post, request } from "./api.ts";
-import { useInterviewSession, sessionStorageKey } from "./use-interview-session.ts";
+import { useInterviewSession } from "./use-interview-session.ts";
 import { RunProgressPanel } from "./run-progress.tsx";
 import { TechnicalPanel } from "./technical-panel.tsx";
 
@@ -83,7 +83,7 @@ function App() {
   const [timeBudget, setTimeBudget] = useState(30);
   const [importNotice, setImportNotice] = useState("");
   const [extractingDocument, setExtractingDocument] = useState<"resume" | "job">();
-  const { session, setSession, answer, setAnswer, pendingCommandId, setPendingCommandId, busyAction, busyRef,
+  const { session, answer, setAnswer, pendingCommandId, busyAction, busyRef,
     error, setError, restore, clear, open, runOnce, start, submit, run, isProcessing, connection } = useInterviewSession();
   const [auditTab, setAuditTab] = useState<"evidence" | "technical" | "report">("evidence");
   const [serverRuntime, setServerRuntime] = useState<RuntimeInfo>();
@@ -107,7 +107,6 @@ function App() {
 
   function newInterview(): void {
     if (busyRef.current) return;
-    localStorage.removeItem(sessionStorageKey);
     clear();
     setResumeText(""); setResumeConsent(false);
     setCandidateName("");
@@ -118,9 +117,6 @@ function App() {
     setJobResponsibilities("");
     setJobRequirements("");
     setImportNotice("");
-    setAnswer("");
-    setPendingCommandId("");
-    setError("");
   }
 
   function createInterview(): void {
@@ -154,7 +150,6 @@ function App() {
         });
         restore(created);
         setResumeText(""); setResumeConsent(false);
-        localStorage.setItem(sessionStorageKey, created.state.sessionId);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "创建失败");
       }

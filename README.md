@@ -21,6 +21,7 @@
 ## 文档导航
 
 - [系统架构与能力进度](docs/architecture/README.md)
+- [单一来源、必要分层与维护检查](docs/development/single-source-workflow.md)
 
 ## 启动
 
@@ -68,7 +69,7 @@ npm run eval:knowledge:questions -- --smoke
 
 上传简历后默认只回填表单。勾选“允许在本次面试中使用简历全文”才上传提取文本，保存在会话文档表并生成 embedding。全文不直接写入 State，也不直接成为 Evidence；经当前回答核验的简历 Claim 可以保留在会话记录。删除全文索引会清除原始全文及向量，不修改已接受的面试记录。会话 JSON 导出包含 State、回答命令、Trace 和叙述报告，不含独立存储的简历全文；数据库备份包含全部本地数据。
 
-Report / Interview Agent 都可按需 `recall` 早期回答、证据或简历，每轮各最多两次。摘要是确定性原话摘录，缺少 embedding 时仍可使用摘要与当前回答。时长从开始面试计时，到达预算后在下一次提交时结束，不会在用户输入中途强制关闭。
+Report / Interview Agent 都可按需 `recall` 早期回答、证据或简历，每轮各最多两次。摘要在每次 Interview Agent 决策前从 State 确定性生成，同一份用于模型输入和统计，不另行持久化；缺少 embedding 时仍可使用摘要与当前回答。时长从开始面试计时，到达预算后在下一次提交时结束，不会在用户输入中途强制关闭。
 
 可选配置同一 Provider 的备用模型：
 

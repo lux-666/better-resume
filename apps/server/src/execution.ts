@@ -1,10 +1,9 @@
-import { buildSummary } from "../../../packages/interview-core/src/memory.ts";
 import type { SessionMemory } from "./session-memory.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import { runModelStage } from "./model-stage.ts";
 import { clarifyWithAgent } from "../../../packages/pi-runtime/src/clarification.ts";
 import type { AnswerCommand, InterviewStateResponse, InterviewStepResponse } from "../../../packages/api-contract/src/index.ts";
-import { activateInterview, applyInterviewDecision, getDemoInterviewDecision, getInterviewProgress, HARD_MAX_TURNS,
+import { activateInterview, applyInterviewDecision, getDemoInterviewDecision, getInterviewProgress, HARD_MAX_TURNS, interviewTimeBudgetExhausted,
   recordAnswer, recordClarification, getActiveInterviewContext, answerTurnCount, setStepExecution, type InterviewState, type InterviewStep, type TaskExecutionTrace } from "../../../packages/interview-core/src/index.ts";
 import { decideNextStepWithAgent, editReportWithAgent, type TelemetryCollector } from "../../../packages/pi-runtime/src/index.ts";
 import { HttpError } from "./http.ts";
@@ -13,7 +12,7 @@ import type { InterviewStore } from "./store.ts";
 import type { TelemetryHub } from "./telemetry-hub.ts";
 import type { RuntimeSet } from "./configured-runtimes.ts";
 import type { ProbeKnowledge } from "../../../packages/pi-runtime/src/knowledge.ts";
-export class ExecutionTimeoutError extends HttpError {
+class ExecutionTimeoutError extends HttpError {
   constructor() { super(503, "PROVIDER_UNAVAILABLE", "本次处理超时，回答已保留，可以重试。", true); }
 }
 export class InterviewExecution {
@@ -45,15 +44,8 @@ export class InterviewExecution {
     return { value: result.value, trace: { source: "llm", modelId: result.modelId, fallbackUsed: result.fallbackUsed,
       durationMs: stages.reduce((n, span) => n + (span.durationMs ?? 0), 0), retryCount: result.attempts - 1 } };
   }
-  private summarize(state: InterviewState, collector: TelemetryCollector) {
-    if (!this.memory) return;
-    const span = collector.start("summary_update", "state");
-    const summary = buildSummary(state); state.memory = { summary };
-    collector.finish(span, { summary: { version: summary.version, sourceStateVersion: summary.sourceStateVersion, chars: JSON.stringify(summary).length, truncated: summary.truncated } });
-  }
   private async next(state: InterviewState, collector: TelemetryCollector, signal: AbortSignal, turnId?: string) {
-    this.summarize(state, collector);
-    const expired = Boolean(state.startedAt && state.timeBudgetMinutes && Date.now() - Date.parse(state.startedAt) >= state.timeBudgetMinutes * 60_000);
+    const expired = interviewTimeBudgetExhausted(state);
     if (expired || answerTurnCount(state) >= HARD_MAX_TURNS || this.runtimes.interview.mode === "demo") {
       const span = collector.start("interview_agent", "agent", undefined, { attempt: 1 });
       const decision = expired ? { action: "FINISH_INTERVIEW" as const, reason: "Interview time budget exhausted." } : answerTurnCount(state) >= HARD_MAX_TURNS ? { action: "FINISH_INTERVIEW" as const, reason: "Hard turn limit reached." } : getDemoInterviewDecision(state);
@@ -173,7 +165,6 @@ export class InterviewExecution {
         collector.linkTurn(record.turn.id);
         const decision = { action: "RECORD_SUPPLEMENT" as const, reason: "Post-closing candidate supplement recorded" };
         state.traces.push({ ...decision, turnId: record.turn.id });
-        this.summarize(state, collector);
         const response = this.stepResponse({ state, decision, evidence: record.evidence }, command.commandId);
         this.stateChange(collector, "persist_supplement", () => this.store.complete(state, command, owner, response));
         completed = true; return response;

@@ -1,4 +1,4 @@
-export type RoutingConfiguration = {
+type RoutingConfiguration = {
   id: "weak_only" | "strong_only" | "static_split";
   reportModelId: string;
   interviewModelId: string;
