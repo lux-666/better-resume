@@ -151,7 +151,7 @@ export class InterviewStore {
   }
   history() {
     const rows = this.database.prepare("SELECT id,created_at,updated_at,state FROM sessions ORDER BY updated_at DESC,id").all() as Array<{ id: string; created_at: string; updated_at: string; state: string }>;
-    return rows.map((row) => { const state = JSON.parse(row.state) as InterviewState; return { sessionId: row.id, candidateName: state.candidate.name, roleName: state.role.name,
+    return rows.map((row) => { const state = hydrateState(JSON.parse(row.state) as InterviewState); return { sessionId: row.id, candidateName: state.candidate.name, roleName: state.role.name,
       status: state.status, turnCount: state.turns.length, createdAt: row.created_at, updatedAt: row.updated_at }; });
   }
   hasActiveCommand(id: string): boolean {

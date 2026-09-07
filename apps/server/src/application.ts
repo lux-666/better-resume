@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { configuredEmbedding } from "./embedding.ts";
 import { KnowledgeQuerySchema } from "../../../packages/pi-runtime/src/knowledge.ts";
 import { KnowledgeStore } from "./knowledge-store.ts";
+import { extractJobFields } from "./job-intake.ts";
 export function createApplication(options: { databasePath: string; runtimes?: RuntimeSet; leaseMs?: number; deadlineMs?: number; knowledgeRoot?: string; embedding?: ReturnType<typeof configuredEmbedding> }) {
   const store = new InterviewStore(options.databasePath, options.leaseMs);
   store.recoverTelemetry();
@@ -39,6 +40,11 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
       const method = request.method ?? "GET";
       const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
       if (method === "GET" && pathname === "/api/health") return json(response, 200, { ok: true, runtime: runtimes.info, knowledge: knowledge.health() });
+      if (method === "POST" && pathname === "/api/intake/job") {
+        const body = await readJson(request);
+        if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 100_000) throw new HttpError(400, "INVALID_REQUEST", "JD 文本不能为空且不能超过 100,000 字符");
+        return json(response, 200, await extractJobFields(body.text, runtimes.report, AbortSignal.timeout(options.deadlineMs ?? 90_000)));
+      }
       if (method === "POST" && pathname === "/api/knowledge/search") {
         const body = await readJson(request);
         if (!Check(KnowledgeQuerySchema, body) || !body.query.trim()) throw new HttpError(400, "INVALID_REQUEST", "Knowledge query is invalid");
@@ -58,6 +64,7 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
         const state = createInterviewState(randomUUID(), role, buildCandidateFromIntake(intake, role), intake);
         state.phaseVersion = 3;
         state.timeBudgetMinutes = body.timeBudgetMinutes;
+        state.maxTurns = body.maxTurns;
         if (intake.job) state.rolePackFailure = "岗位调查计划创建尚未完成或已中断，当前使用通用调查字段。";
         if (body.resume) state.resumeIndexFailure = "简历索引创建尚未完成或已中断。";
         store.create(state);

@@ -197,7 +197,7 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
   let current = recovered.body;
   for (let index = 0; current.state.status === "active" && index < 14; index += 1) {
     const targetFieldId = current.state.traces.at(-1).targetFieldId as string;
-    const answer = targetFieldId.endsWith(":measurement")
+    const answer = current.state.openFloor ? "没有了" : targetFieldId.endsWith(":measurement")
       ? "指标按固定测试集上的成功比例计算，并与同一批样本的历史基线对照。"
       : targetFieldId.endsWith(":failure")
         ? "我通过日志定位根因，修复后补了回归验证和告警。"

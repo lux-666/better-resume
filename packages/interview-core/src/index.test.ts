@@ -108,10 +108,10 @@ test("completion is Agent-requested but deterministically guarded", () => {
     question: "你本人完成了什么？",
   });
   while (state.status === "active") {
-    submitAnswer(state, "我给出了具体设计、实现、指标和故障验证细节。");
+    submitAnswer(state, state.openFloor ? "没有了" : `第 ${state.turns.length + 1} 次说明：我给出了具体设计、实现、指标和故障验证细节。`);
   }
   assert.equal(state.report.status, "complete");
-  assert.equal(state.turns.length, 8);
+  assert.equal(state.turns.length, 9);
 });
 
 test("contradictions block finish until grounded clarification resolves them", () => {

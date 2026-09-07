@@ -1,5 +1,5 @@
 import type { RolePack } from "./phase4-schema.ts";
-export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW" | "CLARIFY_QUESTION" | "RECORD_SUPPLEMENT";
+export type InterviewAction = "ASK_CANDIDATE" | "FINISH_INTERVIEW" | "CLARIFY_QUESTION" | "RECORD_SUPPLEMENT" | "INVITE_CANDIDATE" | "CANDIDATE_FINISH";
 
 export interface Claim {
   id: string;
@@ -107,7 +107,8 @@ export interface CandidateReport {
 }
 
 export interface InterviewTurn {
-  kind?: "answer" | "supplement";
+  kind?: "answer" | "supplement" | "discussion";
+  interviewerResponse?: string;
   targetDepth?: DepthLevel;
   disposition?: AnswerDisposition;
   id: string;
@@ -196,6 +197,8 @@ export interface InterviewState {
   rolePack?: RolePack;
   rolePackFailure?: string;
   resumeIndexFailure?: string;
+  maxTurns?: number;
+  openFloor?: boolean;
   timeBudgetMinutes?: number;
   startedAt?: string;
   phaseVersion?: 3;

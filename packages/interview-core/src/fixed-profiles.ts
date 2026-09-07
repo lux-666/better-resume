@@ -10,9 +10,9 @@ export type FixedProfileName = "strong" | "weak" | "contradictory";
 export type ModelProfileName = FixedProfileName | "multi_field" | "vertical_depth" | "evasive";
 
 export const fixedProfiles: Record<FixedProfileName, { expectedTurns: number }> = {
-  strong: { expectedTurns: 8 },
-  weak: { expectedTurns: 8 },
-  contradictory: { expectedTurns: 10 },
+  strong: { expectedTurns: 9 },
+  weak: { expectedTurns: 9 },
+  contradictory: { expectedTurns: 11 },
 };
 
 export const modelProfiles: Record<ModelProfileName, { maxTurns: number }> = {
@@ -74,6 +74,7 @@ export function fixedProfileResponse(
   profile: ModelProfileName,
   state: InterviewState,
 ): { answer: string; disposition: AnswerDisposition; evidence: EvidenceProposal[] } {
+  if (state.openFloor) return { answer: "没有了", disposition: "substantive", evidence: [] };
   const { project, field } = getActiveInterviewContext(state);
   const projectFields = state.report.fields.filter((item) => item.projectId === project.id);
   const projectTurns = state.turns.filter((turn) => turn.projectId === project.id);

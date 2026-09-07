@@ -6,6 +6,7 @@ import {
   createInterviewState,
   recordAnswer,
   startInterview,
+  renderInterviewReportMarkdown,
 } from "./index.ts";
 
 function stateWithEvidence() {
@@ -40,8 +41,10 @@ test("candidate report links conclusions to questions, answer quotes, and eviden
   assert.equal(supported.evidence[0].answerQuote, "我负责核心流程设计，并完成了上线检查。");
   assert.equal(bundle.report.executiveSummary.recommendation, "continue_with_verification");
   assert.equal(bundle.report.executiveSummary.strengths[0].evidenceIds[0], supported.evidence[0].evidenceId);
-  assert.match(bundle.markdown, /## 综合判断/);
-  assert.match(bundle.markdown, /## 已验证优势/);
+  assert.match(bundle.markdown, /### 优势 · 企业 RAG 知识库/);
+  assert.match(bundle.markdown, /## 原话索引/);
+  assert.equal(bundle.markdown.split("候选人说明了个人负责范围和交付。").length, 2);
+  assert.doesNotMatch(bundle.markdown, /#### .*missing|本次尚未获得足够/);
   assert.match(bundle.markdown, new RegExp(supported.evidence[0].evidenceId));
   assert.equal("scorecard" in bundle, false);
 });
@@ -89,4 +92,18 @@ test("a resolved contradiction requires verification without claiming clarificat
   assert.equal(report.executiveSummary.recommendation, "continue_with_verification");
   assert.doesNotMatch(report.executiveSummary.assessment, /需要澄清/);
   assert.match(report.executiveSummary.nextSteps.join("\n"), /复核.*更正结果/);
+});
+
+test("report renders dynamic findings once and keeps deduplicated source anchors", () => {
+  const report = buildInterviewReportBundle(stateWithEvidence()).report;
+  const source = report.projects[0].fields[0].evidence[0];
+  report.narrative = { schemaVersion: "report-narrative-v0.1", overall: [{ text: "候选人说明了个人负责范围。", evidenceIds: [source.evidenceId] }],
+    sections: [{ title: "上线检查的实际动作", paragraphs: [{ text: "候选人完成了上线检查。", evidenceIds: [source.evidenceId] }] }],
+    projects: [], competencies: [], recruiterNextSteps: [], candidateFeedback: [], unexploredLeads: [] };
+  report.projects[0].fields[1].evidence.push(source);
+  const markdown = renderInterviewReportMarkdown(report);
+  assert.equal(markdown.split("候选人完成了上线检查。").length, 2);
+  assert.equal(markdown.split(`原话：“${source.answerQuote}”`).length, 2);
+  assert.doesNotMatch(markdown, /尚未获得足够|分项目详细评估|证据强度指数/);
+  assert.match(markdown, /调查范围与未覆盖内容/);
 });

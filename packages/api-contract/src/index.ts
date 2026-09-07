@@ -1,3 +1,4 @@
+import { AssessmentSchema } from "../../interview-core/src/assessment.ts";
 import { RolePackSchema, RequirementMatrixSchema } from "../../interview-core/src/phase4-schema.ts";
 import { ReportNarrativeSchema } from "./narrative.ts";
 import { DepthLevelSchema, DispositionSchema, LeadSchema, FieldConclusionSchema, ProjectedLeadSchema } from "./investigation.ts";
@@ -116,7 +117,8 @@ const CandidateReportSchema = Type.Object({
 }, { additionalProperties: false });
 
 const InterviewTurnSchema = Type.Object({
-  kind: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("supplement")])),
+  interviewerResponse: Type.Optional(Type.String()),
+  kind: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("supplement"), Type.Literal("discussion")])),
   targetDepth: Type.Optional(DepthLevelSchema),
   disposition: Type.Optional(DispositionSchema),
   id: Type.String(),
@@ -176,7 +178,7 @@ const StepExecutionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewActionSchema = Type.Union([
-  Type.Literal("ASK_CANDIDATE"), Type.Literal("FINISH_INTERVIEW"), Type.Literal("CLARIFY_QUESTION"), Type.Literal("RECORD_SUPPLEMENT"),
+  Type.Literal("ASK_CANDIDATE"), Type.Literal("FINISH_INTERVIEW"), Type.Literal("CLARIFY_QUESTION"), Type.Literal("RECORD_SUPPLEMENT"), Type.Literal("INVITE_CANDIDATE"), Type.Literal("CANDIDATE_FINISH"),
 ]);
 
 const DecisionTraceSchema = Type.Object({
@@ -193,7 +195,9 @@ const DecisionTraceSchema = Type.Object({
 }, { additionalProperties: false });
 
 export const InterviewStateSchema = Type.Object({
+  openFloor: Type.Optional(Type.Boolean()),
   rolePack: Type.Optional(RolePackSchema), rolePackFailure: Type.Optional(Type.String()), resumeIndexFailure: Type.Optional(Type.String()),
+  maxTurns: Type.Optional(Type.Integer({ minimum: 5, maximum: 50 })),
   timeBudgetMinutes: Type.Optional(Type.Integer({ minimum: 20, maximum: 60 })), startedAt: Type.Optional(Type.String()),
   phaseVersion: Type.Optional(Type.Literal(3)),
   leads: Type.Optional(Type.Array(LeadSchema)),
@@ -226,13 +230,14 @@ export const InterviewDecisionSchema = Type.Object({
 
 export const CreateInterviewBodySchema = Type.Object({
   resume: Type.Optional(Type.Object({ consent: Type.Literal(true), text: Type.String({ minLength: 1, maxLength: 100_000 }) }, { additionalProperties: false })),
+  maxTurns: Type.Optional(Type.Integer({ minimum: 5, maximum: 50 })),
   timeBudgetMinutes: Type.Optional(Type.Integer({ minimum: 20, maximum: 60 })),
   candidate: CandidateIntakeSchema,
   job: Type.Optional(JobIntakeSchema),
 }, { additionalProperties: false });
 
 export const AnswerCommandSchema = Type.Object({
-  intent: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("clarify"), Type.Literal("skip")])),
+  intent: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("clarify"), Type.Literal("skip"), Type.Literal("finish")])),
   commandId: Type.String({ minLength: 1, maxLength: 128 }),
   questionId: Type.String({ minLength: 1, maxLength: 128 }),
   expectedStateVersion: Type.Integer({ minimum: 0 }),
@@ -309,6 +314,7 @@ const CandidateReportGapSchema = Type.Object({
 }, { additionalProperties: false });
 
 const CandidateReportArtifactSchema = Type.Object({
+  assessment: Type.Optional(AssessmentSchema),
   requirementMatrix: Type.Optional(RequirementMatrixSchema),
   leads: Type.Array(ProjectedLeadSchema),
   competencies: Type.Array(Type.Object({ competencyId: Type.String(), name: Type.String(), evidenceStrengthIndex: Type.Union([Type.Number(), Type.Null()]),

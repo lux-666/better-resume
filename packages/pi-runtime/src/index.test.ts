@@ -274,7 +274,7 @@ test("finish_interview returns deterministic blockers and lets the Agent ask ins
   assert.ok(rejected[0].length > 0);
 });
 
-test("Interview Agent cannot keep pursuing a field after two repeated answers", async () => {
+test("Interview Agent moves to another project after two unproductive answers", async () => {
   const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
   activateInterview(state);
   const saturatedFieldId = state.report.fields[0].id;
@@ -288,8 +288,8 @@ test("Interview Agent cannot keep pursuing a field after two repeated answers", 
     recordAnswer(state, "具体细节记不清了。", [], "vague");
   }
   const ask = {
-    targetFieldId: state.report.fields[1].id,
-    reason: "The previous field is saturated.",
+    targetFieldId: state.report.fields[4].id,
+    reason: "The previous project reached a candidate boundary.",
     question: "请说明项目的关键技术机制？",
   };
   const faux = fauxProvider();
@@ -356,4 +356,24 @@ test("provider operations retry once and do not retry validation failures", asyn
     throw new Error("invalid output");
   }));
   assert.equal(attempts, 1);
+});
+
+test("Interview Agent repairs a premature project switch using current-project blockers", async () => {
+  const state = createInterviewState("switch", "role", createFixtureCandidate());
+  startInterview(state); recordAnswer(state, "我完成了模块实现");
+  const current = state.turns[0].projectId;
+  const next = state.report.fields.find((field) => field.projectId !== current)!;
+  const measurement = state.report.fields.find((field) => field.projectId === current && field.id.endsWith(":measurement"))!;
+  const question = { targetFieldId: measurement.id, question: "你用什么依据确认结果？", reason: "Verify the outcome before leaving." };
+  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("read_report", {}), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("ask_candidate", { ...question, targetFieldId: next.id }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("ask_candidate", question), { stopReason: "toolUse" }),
+  ]);
+  const telemetry = new TelemetryCollector();
+  const decision = await decideNextStepWithAgent({ model: faux.getModel(), streamFn: models.streamSimple.bind(models), state, telemetry });
+  assert.equal(decision.targetFieldId, measurement.id);
+  assert.ok(telemetry.trace.spans.some((span) => span.outcome === "rejected"));
+  assert.doesNotThrow(() => applyInterviewDecision(state, decision));
 });

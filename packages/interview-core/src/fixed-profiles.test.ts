@@ -25,7 +25,7 @@ for (const profile of Object.keys(fixedProfiles) as FixedProfileName[]) {
     assert.equal(state.turns.length, fixedProfiles[profile].expectedTurns);
     assert.equal(new Set(questions).size, questions.length);
     assert.equal(state.traces.length, state.turns.length + 1);
-    assert.equal(state.traces.at(-1)?.action, "FINISH_INTERVIEW");
+    assert.equal(state.traces.at(-1)?.action, "CANDIDATE_FINISH");
     assert.equal(state.report.status, "complete");
     assert.ok(state.report.fields.every((field) => field.status !== "missing"));
     assert.equal(state.report.contradictions.filter((item) => item.status === "open").length, 0);

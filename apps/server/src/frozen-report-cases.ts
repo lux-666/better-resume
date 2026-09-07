@@ -89,7 +89,7 @@ function buildFrozenReportCases(profile: ModelProfileName): FrozenReportCase[] {
   const cases: FrozenReportCase[] = [];
   activateInterview(state);
   applyInterviewDecision(state, uniqueDemoDecision(state));
-  while (state.status === "active") {
+  while (state.status === "active" && !state.openFloor) {
     const response = fixedProfileResponse(profile, state);
     const item = {
       id: `${profile}:${cases.length}`,

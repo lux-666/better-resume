@@ -37,7 +37,7 @@ test("candidate intake requires and preserves structured projects", () => {
   assert.equal(state.intake.candidate.projects.length, 1);
   assert.equal(state.report.fields.length, 4);
   const mechanism = state.report.fields.find((field) => field.id.endsWith(":mechanism"))!;
-  assert.equal(mechanism.name, "Approach and reasoning");
+  assert.equal(mechanism.name, "关键方法与选择依据");
   assert.equal(mechanism.competencyId, "role_capability");
   state.report.fields.find((field) => field.id.endsWith(":ownership"))!.status = "supported";
   const decision = getDemoInterviewDecision(state);

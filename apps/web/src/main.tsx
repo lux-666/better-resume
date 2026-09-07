@@ -7,17 +7,19 @@ import { createRoot } from "react-dom/client";
 import type {
   AnswerCommand,
   ApiError,
+  CreateInterviewBody,
   InterviewReportResponse,
   InterviewStateResponse,
   InterviewStepResponse,
   RuntimeInfo,
 } from "@better-resume/api-contract";
-import { parseJobDescription, parseResume } from "./intake-parser.ts";
+import { extractPdfPageText, parseResume } from "./intake-parser.ts";
 import "./style.css";
 
 import { ApiRequestError, post, request } from "./api.ts";
 import { useInterviewSession } from "./use-interview-session.ts";
 import { RunProgressPanel } from "./run-progress.tsx";
+import { InterviewTimeReminder } from "./interview-time-reminder.tsx";
 import { TechnicalPanel } from "./technical-panel.tsx";
 
 const pilotMode = new URLSearchParams(window.location.search).get("pilot") === "1";
@@ -32,6 +34,7 @@ type ProjectForm = {
 type ExtractedDocument = { fileName: string; text: string };
 
 const maximumDocumentCharacters = 100_000;
+const documentAccept = ".txt,.md,.markdown,.csv,.json,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/markdown,application/pdf,image/jpeg,image/png,image/webp";
 const emptyProject = (): ProjectForm => ({
   key: crypto.randomUUID(),
   name: "",
@@ -53,19 +56,27 @@ async function extractTextDocument(file: File): Promise<ExtractedDocument> {
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         const page = await pdf.getPage(pageNumber);
         const content = await page.getTextContent();
-        pages.push(content.items.map((item) => "str" in item ? item.str : "").join(" "));
+        pages.push(extractPdfPageText(content.items));
       }
     } finally {
       await loadingTask.destroy();
     }
     text = pages.join("\n");
+  } else if (/^image\/(jpeg|png|webp)$/.test(mediaType) || /\.(jpg|jpeg|png|webp)$/i.test(file.name)) {
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker(["chi_sim", "eng"]);
+    try {
+      text = (await worker.recognize(file)).data.text;
+    } finally {
+      await worker.terminate();
+    }
   } else if (/^text\//.test(mediaType) || /\.(txt|md|markdown|csv|json)$/i.test(file.name)) {
     text = await file.text();
   } else {
-    throw new Error("当前只支持文本文件、Markdown 和文本型 PDF");
+    throw new Error("当前只支持文本文件、Markdown、文本型 PDF 和 JPG/PNG/WebP 图片");
   }
   const normalized = text.replace(/\r\n?/g, "\n").trim();
-  if (!normalized) throw new Error("文件中没有提取到文本；扫描版 PDF 暂不支持 OCR");
+  if (!normalized) throw new Error("文件中没有提取到文字；请上传文本型 PDF 或清晰的 JD 图片");
   if (normalized.length > maximumDocumentCharacters) throw new Error("提取后的文本不能超过 100,000 字符");
   return { fileName: file.name, text: normalized };
 }
@@ -81,11 +92,13 @@ function App() {
   const [resumeText, setResumeText] = useState("");
   const [resumeConsent, setResumeConsent] = useState(false);
   const [timeBudget, setTimeBudget] = useState(30);
+  const [maxTurns, setMaxTurns] = useState(15);
   const [importNotice, setImportNotice] = useState("");
   const [extractingDocument, setExtractingDocument] = useState<"resume" | "job">();
   const { session, answer, setAnswer, pendingCommandId, busyAction, busyRef,
     error, setError, restore, clear, open, runOnce, start, submit, run, isProcessing, connection } = useInterviewSession();
-  const [auditTab, setAuditTab] = useState<"evidence" | "technical" | "report">("evidence");
+  const [auditTab, setAuditTab] = useState<"interview" | "evidence" | "technical" | "report">("interview");
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [serverRuntime, setServerRuntime] = useState<RuntimeInfo>();
   const interview = session?.state;
   const runtime = session?.runtime ?? serverRuntime;
@@ -103,11 +116,13 @@ function App() {
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "API 未启动"));
   }, []);
 
-  useEffect(() => { if (interview?.status === "completed") setAuditTab("report"); }, [interview?.status]);
+  useEffect(() => { setAuditTab("interview"); }, [interview?.sessionId]);
+  const backstage = Boolean(interview) && auditTab !== "interview";
 
   function newInterview(): void {
     if (busyRef.current) return;
     clear();
+    setHistoryRefresh((value) => value + 1);
     setResumeText(""); setResumeConsent(false);
     setCandidateName("");
     setSkills("");
@@ -124,7 +139,8 @@ function App() {
       try {
         setError("");
         if (!candidateName.trim()) throw new Error("请填写候选人姓名");
-        if (projects.length === 0 || projects.some((project) => !project.name.trim() || !project.description.trim())) {
+        if (projects.length === 0 || !Number.isInteger(maxTurns) || maxTurns < 5 || maxTurns > 50
+                || projects.some((project) => !project.name.trim() || !project.description.trim())) {
           throw new Error("至少完整填写一个项目名称和项目经历");
         }
         if (jobIsIncomplete) throw new Error("填写 JD 时，岗位、岗位介绍、职责和要求四项都不能为空");
@@ -138,6 +154,7 @@ function App() {
             })),
           },
           timeBudgetMinutes: timeBudget,
+          maxTurns,
           ...(resumeConsent && resumeText ? { resume: { consent: true, text: resumeText } } : {}),
           ...(hasJobInput ? {
             job: {
@@ -149,6 +166,7 @@ function App() {
           } : {}),
         });
         restore(created);
+        setHistoryRefresh((value) => value + 1);
         setResumeText(""); setResumeConsent(false);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "创建失败");
@@ -160,6 +178,7 @@ function App() {
     if (!file) return;
     setExtractingDocument(kind);
     setError("");
+    setImportNotice("");
     try {
       const extracted = await extractTextDocument(file);
       if (kind === "resume") {
@@ -175,12 +194,12 @@ function App() {
         });
         setImportNotice(`已从 ${extracted.fileName} 回填候选人信息；全文暂存在此页面，只有勾选后才随会话上传。`);
       } else {
-        const parsed = parseJobDescription(extracted.text);
-        setJobTitle((current) => current.trim() ? current : parsed.title ?? "");
-        setJobIntroduction((current) => current.trim() ? current : parsed.introduction ?? "");
-        setJobResponsibilities((current) => current.trim() ? current : parsed.responsibilities ?? "");
-        setJobRequirements((current) => current.trim() ? current : parsed.requirements ?? "");
-        setImportNotice(`已从 ${extracted.fileName} 回填岗位信息；原始文件内容未保存。`);
+        const parsed = await post<NonNullable<CreateInterviewBody["job"]>>("/api/intake/job", { text: extracted.text });
+        setJobTitle(parsed.title);
+        setJobIntroduction(parsed.introduction);
+        setJobResponsibilities(parsed.responsibilities);
+        setJobRequirements(parsed.requirements);
+        setImportNotice(`已由 LLM 从 ${extracted.fileName} 填写岗位信息，请检查并修改后创建面试。`);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "文件解析失败");
@@ -246,24 +265,22 @@ function App() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "导出失败"); }
   }
   return (
-    <main className={pilotMode && interview?.status === "active" ? "pilot-mode pilot-active" : undefined}>
+    <main className={interview ? "session-page" : undefined}>
       <header>
-        <p className="eyebrow">EVIDENCE-DRIVEN INTERVIEW</p>
+        {!interview && <p className="eyebrow">EVIDENCE-DRIVEN INTERVIEW</p>}
         <h1>Better Resume</h1>
-        <p>从当前候选人的项目经历出发，用可追溯证据判断岗位匹配。</p>
-        {runtime && <p className={`runtime ${runtime.mode}`}>
-          <strong>{runtime.mode === "llm" ? "LLM 已连接" : "Demo 模式"}</strong>
-          {runtime.mode === "llm" && (runtime.reportModelId || runtime.interviewModelId
-            ? ` · ${runtime.provider} · Report=${runtime.reportModelId} · Interview=${runtime.interviewModelId}`
-            : ` · ${runtime.provider}/${runtime.modelId}`)}
-        </p>}
+        {!interview && <p>从你的项目经历出发，一步步聊清你的工作。</p>}
+        {interview && <button className="home-button" type="button" onClick={newInterview}>返回主页</button>}
       </header>
-      <HistoryPanel refreshKey={`${interview?.sessionId ?? ""}:${session?.stateVersion ?? ""}`} currentId={interview?.sessionId} disabled={isProcessing}
-        onOpen={open} onDeleted={(id) => { if (id === interview?.sessionId) newInterview(); }} />
-      <section className="grid">
-        <article>
+      {interview && <nav className="tabs page-bar" aria-label="页面切换">
+        {([ ["interview", "面试"], ["evidence", "后台 · 面试进度"], ["report", "后台 · 报告预览"], ["technical", "后台 · 技术视图"] ] as const).map(([tab, label]) =>
+          <button key={tab} aria-current={auditTab === tab ? "page" : undefined} className={auditTab === tab ? "selected" : "secondary"}
+            disabled={tab !== "interview" && pilotMode && interview.status === "active"} onClick={() => setAuditTab(tab)}>{label}</button>)}
+      </nav>}
+      <section className="workspace">
+        {!backstage && <article aria-label="面试页面">
           <span>01 / 面试</span>
-          <h2>{interview?.role.name ?? "创建候选人档案"}</h2>
+          <h2>{interview?.status === "active" ? "项目交流" : interview?.status === "completed" ? "本次交流已结束" : interview?.role.name ?? "创建候选人档案"}</h2>
           {!interview && <>
             <DemoProfiles onChoose={(intake) => {
               setResumeText(""); setResumeConsent(false);
@@ -278,7 +295,7 @@ function App() {
               <input
                 aria-label="上传简历"
                 type="file"
-                accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,application/pdf"
+                accept={documentAccept}
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
@@ -339,13 +356,13 @@ function App() {
               </button>
             </fieldset>
 
-            <fieldset>
+            <fieldset disabled={extractingDocument === "job"}>
               <legend>Job Description（可选）</legend>
-              <p className="field-hint">上传后自动拆到岗位、岗位介绍、职责和要求；原始 JD 不进入 Session。</p>
+              <p className="field-hint">支持文本、文本型 PDF 和 JPG/PNG/WebP。图片在浏览器内识字，提取的文本发送给 LLM 填写以下四项，原图不上传。重新上传会替换这四项，请人工检查后使用。</p>
               <input
                 aria-label="上传 Job Description"
                 type="file"
-                accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,application/pdf"
+                accept={documentAccept}
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
@@ -353,7 +370,7 @@ function App() {
                 }}
                 disabled={Boolean(extractingDocument)}
               />
-              {extractingDocument === "job" && <p className="file-note">正在提取 Job Description…</p>}
+              {extractingDocument === "job" && <p className="file-note" role="status">正在提取文本并由 LLM 填写岗位信息…</p>}
               <label htmlFor="job-title">岗位</label>
               <input
                 id="job-title"
@@ -388,11 +405,13 @@ function App() {
               />
             </fieldset>
 
-            <label htmlFor="time-budget">面试时长预算</label>
+            <label htmlFor="time-budget">时长提醒</label>
             <select id="time-budget" value={timeBudget} onChange={(e) => setTimeBudget(Number(e.target.value))}>
               {[20, 30, 45, 60].map((n) => <option key={n} value={n}>{n} 分钟</option>)}
             </select>
-            <p className="field-hint">到时在下一次提交后结束，最多 15 轮；缺少的信息保留为待核验项。</p>
+            <label htmlFor="max-turns">轮次上限</label>
+            <input id="max-turns" type="number" min={5} max={50} step={1} value={maxTurns} onChange={(e) => setMaxTurns(Number(e.target.value))} required />
+            <p className="field-hint">可以设置 5–50 轮交流。到时间会提醒你，聊满设定轮次后结束面试。</p>
             {importNotice && <p className="file-note success-note">{importNotice}</p>}
 
             <button
@@ -419,7 +438,8 @@ function App() {
             </button>
           </>}
           {interview?.status === "active" && <>
-            {interview.turns.length === 0 && <p className="opening">你好，{interview.candidate.name}。我们会围绕你的项目经历逐步交流，本次预算约 {interview.timeBudgetMinutes ?? 30} 分钟，最多 15 个问题。不清楚的内容可以直接说明，也可以请我解释或跳过。</p>}
+            <InterviewTimeReminder state={interview} />
+            {interview.turns.length === 0 && <p className="opening">你好，{interview.candidate.name}。我们会围绕你的项目经历逐步交流，本次预算约 {interview.timeBudgetMinutes ?? 30} 分钟，最多 {interview.maxTurns ?? 15} 轮，时间到了只提醒。不清楚的内容可以直接说明，也可以请我解释或跳过。</p>}
             {interview.currentTransition && <p>{interview.currentTransition}</p>}
             {interview.currentClarification && <p className="clarification">{interview.currentClarification}</p>}
             {interview.currentAcknowledgement && <p>{interview.currentAcknowledgement}</p>}
@@ -435,9 +455,10 @@ function App() {
               rows={5}
             />
             <p className="field-hint">Enter 提交 · Shift + Enter 换行</p>
-            <div className="actions"><button className="secondary" onClick={() => submit("clarify")}
+            {!interview.openFloor && <div className="actions"><button className="secondary" onClick={() => submit("clarify")}
               disabled={isProcessing || Boolean(pendingCommandId) || interview.clarifications?.some((item) => item.question === interview.currentQuestion)}>请解释这个问题</button>
-              <button className="secondary" onClick={() => submit("skip")} disabled={isProcessing || Boolean(pendingCommandId)}>跳过这个问题</button></div>
+              <button className="secondary" onClick={() => submit("skip")} disabled={isProcessing || Boolean(pendingCommandId)}>跳过这个问题</button></div>}
+            {interview.openFloor && <button className="secondary" onClick={() => submit("finish")} disabled={isProcessing || Boolean(pendingCommandId)}>没有其他补充，结束面试</button>}
             <button onClick={() => submit()} disabled={!answer.trim() || isProcessing} aria-busy={busyAction === "submit"}>
               {busyAction === "submit" && <span className="spinner" aria-hidden="true" />}
               {busyAction === "submit" ? "提交中…" : pendingCommandId ? "重试提交" : "提交回答"}
@@ -447,7 +468,21 @@ function App() {
             <p className="done">感谢你，{interview.candidate.name}。本次交流已结束，报告会整理你分享的内容和仍需核实的事项。你也可以补充一条项目事实。</p>
             <SupplementForm session={session!} onComplete={restore} />
           </>}
-          {interview && <>
+          {interview && isProcessing && <RunProgressPanel state={interview} key={run?.traceId ?? pendingCommandId ?? "pending"} run={busyAction === "start" && run?.operation !== "start" ? undefined : run}
+            submitting={isProcessing} reconnecting={connection === "reconnecting"} />}
+          {interview && interview.status !== "draft" && <TechnicalPanel key={interview.sessionId} state={interview} version={session!.stateVersion} rounds />}
+          {connection === "reconnecting" && <p role="status">连接正在恢复，你的回答会保留。</p>}
+          {error && <p className="error">{error}</p>}
+        </article>}
+        {backstage && interview && <article aria-label="面试后台">
+          {interview && auditTab === "report" && <ReportPanel sessionId={interview.sessionId} version={session!.stateVersion} />}
+          {interview && auditTab === "technical" && <>
+        {runtime && <p className={`runtime ${runtime.mode}`}>
+          <strong>{runtime.mode === "llm" ? "LLM 已连接" : "Demo 模式"}</strong>
+          {runtime.mode === "llm" && (runtime.reportModelId || runtime.interviewModelId
+            ? ` · ${runtime.provider} · Report=${runtime.reportModelId} · Interview=${runtime.interviewModelId}`
+            : ` · ${runtime.provider}/${runtime.modelId}`)}
+        </p>}
             {interview.rolePack && <p className="field-hint">已生成岗位调查计划 · {interview.rolePack.requirements.length} 条要求</p>}
             {interview.rolePackFailure && <p className="field-hint">{interview.rolePackFailure}</p>}
             {interview.resumeIndexFailure && <p className="field-hint">{interview.resumeIndexFailure}</p>}
@@ -455,40 +490,9 @@ function App() {
               <button className="secondary" disabled={isProcessing} onClick={() => {
                 void request(`/api/interviews/${interview.sessionId}/resume-index`, { method: "DELETE" }).then(() => request<InterviewStateResponse>(`/api/interviews/${interview.sessionId}/state`)).then(restore).catch((cause) => setError(cause.message));
               }}>删除简历全文索引</button></div>}
-            <details className="transcript"><summary>完整对话 · {interview.turns.length} 轮</summary>
-              {interview.turns.map((turn) => <section key={turn.id}><strong>{turn.kind === "supplement" ? "补充" : `第 ${turn.index + 1} 轮`}：{turn.question}</strong>
-                {interview.clarifications?.filter((c) => c.question === turn.question).map((c, i) => <p key={i}>候选人：{c.request}；问题说明：{c.response}</p>)}
-                <p className="answer-text">{turn.answer}</p></section>)}
-              {interview.clarifications?.filter((c) => !interview.turns.some((t) => t.question === c.question)).map((c, i) => <p key={i}>候选人：{c.request}；问题说明：{c.response}</p>)}
-            </details>
-            <button className="secondary" onClick={() => void exportSession()}>导出会话记录 JSON</button>
-            <button className="secondary" onClick={() => void downloadInterviewReport("json")}>
-              下载{interview.status === "completed" ? "最终" : "当前"} Report JSON
-            </button>
-            <button className="secondary" onClick={() => void downloadInterviewReport("markdown")}>
-              下载{interview.status === "completed" ? "最终" : "当前"} Report Markdown
-            </button>
+          <RunProgressPanel state={interview} run={run} submitting={busyAction === "submit" || busyAction === "start"} reconnecting={connection === "reconnecting"} />
+            <TechnicalPanel state={interview} version={session!.stateVersion} />
           </>}
-          {pilotMode && interview && <button className="secondary" onClick={exportPilotSession}>
-            下载 Pilot Session JSON
-          </button>}
-          {interview && <button className="secondary" onClick={newInterview} disabled={isProcessing}>新建 Session</button>}
-          <RunProgressPanel run={run} submitting={busyAction === "submit" || busyAction === "start"} reconnecting={connection === "reconnecting"} />
-          {error && <p className="error">{error}</p>}
-        </article>
-        <article>
-          {pilotMode && interview?.status === "active" && <section className="pilot-lock">
-            <span>02 / 面试后审核</span>
-            <h2>本轮完成后开放</h2>
-            <p>面试过程中不要查看 Report、Evidence 或 Agent Trace，避免这些内部信息影响你的回答与体验评分。</p>
-          </section>}
-          {interview && <nav className="tabs" aria-label="审核面板">
-            <button className={auditTab === "evidence" ? "selected" : "secondary"} onClick={() => setAuditTab("evidence")}>面试进度</button>
-            <button className={auditTab === "report" ? "selected" : "secondary"} onClick={() => setAuditTab("report")}>报告预览</button>
-            <button className={auditTab === "technical" ? "selected" : "secondary"} onClick={() => setAuditTab("technical")}>技术视图</button>
-          </nav>}
-          {interview && auditTab === "report" && <ReportPanel sessionId={interview.sessionId} version={session!.stateVersion} />}
-          {interview && auditTab === "technical" && <TechnicalPanel state={interview} version={session!.stateVersion} />}
           {auditTab === "evidence" && <div className="evidence-panel">
           <span>02 / 面试进度</span>
           {progress && <section className="progress-panel">
@@ -544,9 +548,26 @@ function App() {
             <p>“{item.sourceQuote}”</p>
           </blockquote>)}
           </div>}
-        </article>
+          <details className="session-tools"><summary>会话管理与下载</summary>
+            <button className="secondary" onClick={() => void exportSession()}>导出会话记录 JSON</button>
+            <button className="secondary" onClick={() => void downloadInterviewReport("json")}>
+              下载{interview.status === "completed" ? "最终" : "当前"} Report JSON
+            </button>
+            <button className="secondary" onClick={() => void downloadInterviewReport("markdown")}>
+              下载{interview.status === "completed" ? "最终" : "当前"} Report Markdown
+            </button>
+          {pilotMode && interview && <button className="secondary" onClick={exportPilotSession}>
+            下载 Pilot Session JSON
+          </button>}
+          {interview && <button className="secondary" onClick={newInterview} disabled={isProcessing}>新建 Session</button>}
+          </details>
+      <HistoryPanel refreshKey={`${interview?.sessionId ?? ""}:${session?.stateVersion ?? ""}`} currentId={interview?.sessionId} disabled={isProcessing}
+        onOpen={open} onDeleted={(id) => { if (id === interview?.sessionId) newInterview(); }} />
+          {error && <p className="error">{error}</p>}
+        </article>}
       </section>
-      <footer>Report → Investigate → Ask → Grounded edit → Finish</footer>
+      {!interview && <HistoryPanel refreshKey={`intake:${historyRefresh}`} disabled={isProcessing} onOpen={open} onDeleted={() => {}} />}
+
     </main>
   );
 }

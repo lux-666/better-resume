@@ -1,13 +1,16 @@
 import type { InterviewAction, Claim, Project, CandidateProfile, RoleCompetency, InterviewRole, CandidateProjectIntake, CandidateIntake, InterviewIntake, ReportFieldStatus, ReportField, ReportContradiction, CandidateReport, InterviewTurn, Evidence, EvidenceProposal, AnswerDisposition, CompetencyState, TaskExecutionTrace, StepExecutionTrace, DecisionTrace, InterviewProgress, InterviewState, InterviewDecision, InterviewStep, AnswerRecord, CompletionCheck, DepthLevel, LeadProposal, Lead, Clarification } from "./types.ts";
 export type { InterviewAction, Claim, Project, CandidateProfile, RoleCompetency, InterviewRole, CandidateProjectIntake, CandidateIntake, InterviewIntake, ReportFieldStatus, ReportField, ReportContradiction, CandidateReport, InterviewTurn, Evidence, EvidenceProposal, AnswerDisposition, CompetencyState, TaskExecutionTrace, StepExecutionTrace, DecisionTrace, InterviewProgress, InterviewState, InterviewDecision, InterviewStep, AnswerRecord, CompletionCheck, DepthLevel, LeadProposal, Lead, Clarification } from "./types.ts";
-import { fieldConclusion, projectLeads, groundedAnswerClaims, prepareLeads, answerTurnCount, interviewTimeBudgetExhausted } from "./investigation.ts";
-export { fieldConclusion, projectLeads, groundedAnswerClaims, answerTurnCount, interviewTimeBudgetExhausted } from "./investigation.ts";
-export const HARD_MAX_TURNS = 15;
+import { fieldConclusion, projectLeads, groundedAnswerClaims, prepareLeads, answerTurnCount, interviewTurnLimit, interviewTimeBudgetExhausted, saturatedFieldIds, projectInvestigationBlockers, validateProjectSwitch } from "./investigation.ts";
+export { fieldConclusion, projectLeads, groundedAnswerClaims, answerTurnCount, interviewTurnLimit, interviewTimeBudgetExhausted, saturatedFieldIds, projectInvestigationBlockers, validateProjectSwitch } from "./investigation.ts";
+import { addCandidateTopic, recordDiscussion, demoOpenFloorReply } from "./open-floor.ts";
+import { projectPauseReason } from "./investigation.ts";
+export { addCandidateTopic, recordDiscussion, demoOpenFloorReply } from "./open-floor.ts";
+
 
 const FIELD_KINDS = [
   {
     id: "ownership",
-    name: "Contribution and ownership",
+    name: "个人贡献与职责",
     importance: 1,
     competency: (project: Project) => project.mappedCompetencies.find((id) =>
       ["ownership_delivery", "software_engineering"].includes(id)
@@ -16,7 +19,7 @@ const FIELD_KINDS = [
   },
   {
     id: "mechanism",
-    name: "Approach and reasoning",
+    name: "关键方法与选择依据",
     importance: 0.9,
     competency: (project: Project) => project.mappedCompetencies.find((id) =>
       id === "role_capability"
@@ -27,7 +30,7 @@ const FIELD_KINDS = [
   },
   {
     id: "measurement",
-    name: "Results and validation",
+    name: "结果与验证",
     importance: 0.9,
     competency: (project: Project) => project.mappedCompetencies.includes("evaluation")
       ? "evaluation" : project.mappedCompetencies[0],
@@ -35,7 +38,7 @@ const FIELD_KINDS = [
   },
   {
     id: "failure",
-    name: "Problem solving",
+    name: "问题解决",
     importance: 0.8,
     competency: (project: Project) => project.mappedCompetencies.includes("problem_solving")
       ? "problem_solving" : project.mappedCompetencies[0],
@@ -118,7 +121,7 @@ export function getInterviewProgress(
     stage: state.status === "draft" ? "not_started" : state.status === "completed" ? "completed" : "interviewing",
     coveragePercent: coverageTotal === 0 ? 0
       : Math.round((coveredFields + coveredCoreCompetencies) / coverageTotal * 100),
-    turns: { completed: answerTurnCount(state), max: HARD_MAX_TURNS },
+    turns: { completed: answerTurnCount(state), max: interviewTurnLimit(state) },
     projects: {
       covered: state.candidate.projects.filter((project) =>
         state.evidence.some((evidence) => evidence.projectId === project.id)
@@ -231,13 +234,15 @@ export function recordAnswer(
   disposition: AnswerDisposition = "substantive",
   leadProposals: readonly LeadProposal[] = [],
   supplementProjectId?: string,
+  answerProjectId?: string,
 ): AnswerRecord {
   if (supplementProjectId ? state.status !== "completed" || state.turns.some((turn) => turn.kind === "supplement") : state.status !== "active" || !state.currentQuestion) throw new Error("Interview is not awaiting an answer");
   const text = answer.trim();
   if (!text) throw new Error("Answer cannot be empty");
-  const context = supplementProjectId ? {
-    project: state.candidate.projects.find((project) => project.id === supplementProjectId),
-    field: state.report.fields.find((field) => field.projectId === supplementProjectId),
+  const projectId = supplementProjectId ?? answerProjectId;
+  const context = projectId ? {
+    project: state.candidate.projects.find((project) => project.id === projectId),
+    field: state.report.fields.find((field) => field.projectId === projectId),
   } : getActiveInterviewContext(state);
   const { project, field } = context;
   if (!project || !field) throw new Error("Unknown project");
@@ -398,27 +403,32 @@ function updateCompetency(state: InterviewState, competencyId: string): void {
 }
 
 export function validateCompletion(state: InterviewState): CompletionCheck {
-  if (answerTurnCount(state) >= HARD_MAX_TURNS || interviewTimeBudgetExhausted(state)) return { allowed: true, forced: true, blockers: [], blockerCodes: [] };
+  if (answerTurnCount(state) >= interviewTurnLimit(state)) return { allowed: true, forced: true, blockers: [], blockerCodes: [] };
+  const saturated = new Set(saturatedFieldIds(state));
+  const paused = new Set(state.candidate.projects.filter((project) => projectPauseReason(state, project.id)).map((project) => project.id));
   const blockers = state.report.fields
-    .filter((field) => field.importance >= 0.8 && field.status === "missing")
+    .filter((field) => field.importance >= 0.8 && field.status === "missing" && !saturated.has(field.id) && !paused.has(field.projectId))
     .map((field) => `${field.id}: ${field.description}`);
   const blockerCodes = blockers.map(() => "required_field_missing");
   for (const project of state.candidate.projects) {
-    if (!state.report.fields.some((field) => field.projectId === project.id && field.evidenceIds.length > 0)) {
+    if (paused.has(project.id)) continue;
+    if (!state.report.fields.some((field) => field.projectId === project.id && field.evidenceIds.length > 0) && state.report.fields.some((field) => field.projectId === project.id && !saturated.has(field.id))) {
       blockers.push(`${project.id}: core project has no candidate evidence`);
       blockerCodes.push("project_evidence_missing");
     }
   }
   if (state.phaseVersion === 3) {
     for (const project of state.candidate.projects) {
+      if (paused.has(project.id)) continue;
       const explored = state.report.fields.filter((field) => field.projectId === project.id).map((field) => fieldConclusion(state, field.id));
-      if (!explored.some((field) => (field.reachedDepth ?? 0) >= 3 || field.boundaryReason)) {
+      if (!explored.some((field) => (field.reachedDepth ?? 0) >= 3) && state.report.fields.some((field) => field.projectId === project.id && !saturated.has(field.id))) {
         blockers.push(`${project.id}: depth or grounded boundary required`);
         blockerCodes.push("depth_or_boundary_missing");
       }
     }
   }
   for (const contradiction of state.report.contradictions.filter((item) => item.status === "open")) {
+    if (contradiction.projectId && paused.has(contradiction.projectId)) continue;
     blockers.push(`${contradiction.id}: unresolved contradiction`);
     blockerCodes.push("contradiction_unresolved");
   }
@@ -469,18 +479,31 @@ export function applyInterviewDecision(
     return { state, decision, question: state.currentQuestion, evidence: [] };
   }
   const completion = validateCompletion(state);
-  const effective = answerTurnCount(state) >= HARD_MAX_TURNS
-    ? { action: "FINISH_INTERVIEW", reason: "Hard turn limit reached." } satisfies InterviewDecision
-    : decision;
-  if (effective.action === "FINISH_INTERVIEW") {
-    if (!completion.allowed) throw new Error(`Candidate Report is incomplete: ${completion.blockers.join("; ")}`);
+  if (decision.action === "CANDIDATE_FINISH" && !state.openFloor) throw new Error("Candidate closing requires an open invitation");
+  const effective: InterviewDecision = completion.forced
+    ? { action: "FINISH_INTERVIEW", reason: "Configured turn limit reached." }
+    : decision.action === "FINISH_INTERVIEW" && completion.allowed
+      ? { action: "INVITE_CANDIDATE", reason: "Invite unasked strengths or candidate questions before closing.",
+        question: "还有什么你希望补充或向我了解的内容？", acknowledgement: "可以聊聊简历之外的拿手经历，也可以向我提问；没有想补充的可以直接结束。" }
+      : decision;
+  if (effective.action === "FINISH_INTERVIEW" || effective.action === "CANDIDATE_FINISH") {
+    if (!completion.allowed && effective.action !== "CANDIDATE_FINISH") throw new Error(`Candidate Report is incomplete: ${completion.blockers.join("; ")}`);
     state.status = "completed";
     state.report.status = "complete";
     state.currentAcknowledgement = undefined;
     state.currentQuestion = undefined;
+    state.openFloor = false;
+  } else if (effective.action === "INVITE_CANDIDATE") {
+    if (!completion.allowed) throw new Error("Resolve investigation blockers before inviting open discussion");
+    state.openFloor = true;
+    state.currentQuestion = effective.question;
+    state.currentAcknowledgement = effective.acknowledgement;
+    state.currentClarification = undefined;
+    state.currentTransition = undefined;
   } else {
     const field = state.report.fields.find((item) => item.id === effective.targetFieldId);
     if (!field || !effective.question) throw new Error("ask_candidate requires a known report field and question");
+    validateProjectSwitch(state, field.id);
     validateCandidateQuestion(effective.question, effective.acknowledgement);
     if (effective.transition) validateCandidateAside(effective.transition);
     if (effective.targetDepth !== undefined && (!Number.isInteger(effective.targetDepth) || effective.targetDepth < 1 || effective.targetDepth > 5)) throw new Error("Invalid target depth");
@@ -531,18 +554,19 @@ export type {
 } from "./report-output.ts";
 
 export function getDemoInterviewDecision(state: InterviewState): InterviewDecision {
-  const openContradiction = state.report.contradictions.find((item) => item.status === "open");
+  const openContradiction = state.report.contradictions.find((item) => item.status === "open" && (!item.projectId || !projectPauseReason(state, item.projectId)));
   const contradictionField = openContradiction && state.report.fields.find((field) =>
     field.projectId === openContradiction.projectId && field.status === "contradicted"
   );
-  const projects = state.candidate.projects.toSorted((left, right) => projectValue(right) - projectValue(left));
-  const needsDepth = state.phaseVersion === 3 ? state.report.fields.find((field) => {
-    const projectFields = state.report.fields.filter((item) => item.projectId === field.projectId);
-    return !projectFields.some((item) => { const conclusion = fieldConclusion(state, item.id); return (conclusion.reachedDepth ?? 0) >= 3 || conclusion.boundaryReason; });
-  }) : undefined;
-  const field = contradictionField ?? projects.flatMap((project) => state.report.fields
-    .filter((item) => item.projectId === project.id && item.status === "missing")
-    .toSorted((left, right) => right.importance - left.importance))[0] ?? needsDepth;
+  const currentProjectId = state.turns.at(-1)?.projectId;
+  const stay = currentProjectId && projectInvestigationBlockers(state, currentProjectId).length > 0;
+  const saturated = new Set(saturatedFieldIds(state));
+  const projects = state.candidate.projects.toSorted((left, right) => projectValue(right) - projectValue(left))
+    .filter((project) => !projectPauseReason(state, project.id) && (!stay || project.id === currentProjectId));
+  const available = projects.flatMap((project) => state.report.fields.filter((field) => field.projectId === project.id && !saturated.has(field.id)));
+  const needsDepth = state.phaseVersion === 3 ? available.find((field) => !state.report.fields.some((item) =>
+    item.projectId === field.projectId && (fieldConclusion(state, item.id).reachedDepth ?? 0) >= 3)) : undefined;
+  const field = contradictionField ?? available.find((field) => field.status === "missing") ?? needsDepth;
   if (!field) return { action: "FINISH_INTERVIEW", reason: "The Candidate Report has no completion blockers." };
   return {
     action: "ASK_CANDIDATE",
@@ -566,7 +590,16 @@ export function submitAnswer(
   proposedEvidence?: readonly EvidenceProposal[],
   disposition: AnswerDisposition = "substantive",
 ): InterviewStep {
-  const record = recordAnswer(state, answer, proposedEvidence, disposition);
+  let answerProjectId: string | undefined;
+  if (state.openFloor) {
+    const reply = demoOpenFloorReply(answer);
+    if (reply.kind !== "topic") {
+      const turn = recordDiscussion(state, answer, reply.response);
+      return applyInterviewDecision(state, { action: reply.kind === "done" ? "CANDIDATE_FINISH" : "FINISH_INTERVIEW", reason: "Candidate-led discussion" }, turn.id);
+    }
+    answerProjectId = addCandidateTopic(state, answer, reply.title!);
+  }
+  const record = recordAnswer(state, answer, proposedEvidence, disposition, [], undefined, answerProjectId);
   const step = applyInterviewDecision(state, getDemoInterviewDecision(state), record.turn.id);
   step.evidence = record.evidence;
   return step;

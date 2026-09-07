@@ -1,8 +1,9 @@
+import { buildAssessment, type CompetencyAssessment } from "./assessment.ts";
 import { requirementMatrix } from "./role-pack.ts";
 import type { RequirementMatrix } from "./phase4-schema.ts";
-import { fieldConclusion, projectLeads } from "./investigation.ts";
+import { fieldConclusion, projectLeads, interviewTurnLimit, answerTurnCount, projectPauseReason } from "./investigation.ts";
 import type { DepthLevel } from "./types.ts";
-import type { ReportNarrative, NarrativeStatus } from "./narrative-schema.ts";
+import type { ReportNarrative, NarrativeStatus, NarrativeSentence } from "./narrative-schema.ts";
 import type {
   Evidence,
   InterviewState,
@@ -53,6 +54,7 @@ export interface CandidateReportGap {
 }
 
 export interface CandidateReportArtifact {
+  assessment?: CompetencyAssessment;
   requirementMatrix?: RequirementMatrix;
   leads: ReturnType<typeof projectLeads>;
   competencies: Array<{ competencyId: string; name: string; evidenceStrengthIndex: number | null; confidence: number; evidenceIds: string[];
@@ -274,6 +276,7 @@ export function buildCandidateReportArtifact(
   const recommendationValue = matrix.some((r) => r.priority === "must" && r.status === "contradicted") ? "hold_for_clarification" : reportRecommendation(summary);
   const integrityErrors = validateReportIntegrity(state);
   return {
+    assessment: buildAssessment(state, matrix, integrityErrors.length === 0),
     ...(state.rolePack ? { requirementMatrix: matrix } : {}),
     leads: projectLeads(state),
     competencies: state.role.competencies.map((competency) => {
@@ -327,6 +330,11 @@ export function buildCandidateReportArtifact(
       "证据不足、证据冲突和证据支持分别呈现，不用单一总分掩盖差异。",
     ],
     limitations: [
+      ...state.candidate.projects.flatMap((project) => {
+        const reason = projectPauseReason(state, project.id);
+        return reason ? [`“${project.name}”：${reason} 未展开内容保留为待核实，不据此判定能力不足。`] : [];
+      }),
+      ...(state.status === "completed" && summary.missing > 0 ? [answerTurnCount(state) >= interviewTurnLimit(state) ? "本次达到问题数量上限后结束，以下未覆盖内容尚未完成调查。" : "部分话题经跳过或重复追问后停止，未获得信息不代表能力不足。"] : []),
       ...(state.role.source === "generic" ? ["未提供 Job Description，本报告不能形成具体岗位匹配结论。"] : []),
       ...(state.rolePack ? ["岗位要求映射和项目相关性根据 JD 与候选人填写的项目描述生成，调查计划本身不是能力证据。"] : [state.rolePackFailure ?? "当前报告使用跨岗位通用调查维度，不等价于对每条岗位要求逐项验证。"]),
       ...(state.resumeIndexFailure ? [state.resumeIndexFailure] : []),
@@ -340,105 +348,115 @@ function escapeMarkdown(value: string): string {
   return value.replace(/([\\`*_{}[\]()#+.!|>-])/g, "\\$1");
 }
 
-function recommendationLabel(value: CandidateReportArtifact["executiveSummary"]["recommendation"]): string {
-  if (value === "hold_for_clarification") return "暂缓判断，先澄清冲突";
-  if (value === "insufficient_evidence") return "证据不足，暂不判断";
-  if (value === "continue_with_verification") return "可继续流程，但需定向核验";
-  return "可进入下一招聘环节";
+export function reportInsights(report: Pick<CandidateReportArtifact, "narrative" | "executiveSummary">): NonNullable<ReportNarrative["insights"]> {
+  if (report.narrative?.insights) return report.narrative.insights;
+  const seen = new Set<string>();
+  return [...report.executiveSummary.strengths, ...report.executiveSummary.concerns].filter((item) => {
+    const key = `${item.status}:${item.fieldName}`;
+    if (!item.evidenceIds.length || seen.has(key)) return false;
+    seen.add(key); return true;
+  }).map((item) => ({ kind: item.status === "supported" ? "strength" : item.status === "contradicted" ? "risk" : "development",
+    title: `${item.projectName} · ${item.fieldName}`, explanation: { text: item.conclusion, evidenceIds: item.evidenceIds } }));
 }
 
-function renderFindings(lines: string[], title: string, findings: CandidateReportFinding[], empty: string): void {
-  lines.push("", `## ${title}`, "");
-  if (findings.length === 0) {
-    lines.push(empty);
-    return;
+export function reportImprovementPlan(report: Pick<CandidateReportArtifact, "narrative" | "executiveSummary">): NonNullable<ReportNarrative["improvementPlan"]> {
+  if (report.narrative?.improvementPlan) return report.narrative.improvementPlan;
+  const tasks: Record<string, [string, string]> = {
+    ownership: ["画出交付流程并标注自己与同事的职责；挑选个人决策，附上实现或交付记录。", "能明确区分个人动作和团队成果，并沿原始记录解释一次完整交付。"],
+    mechanism: ["复现项目中的关键方案，对比一个替代方案，记录选择依据和失效条件。", "能用复现结果说明取舍，并解释业务约束改变时如何调整方案。"],
+    measurement: ["整理固定样本、指标定义和对照基线，完成一份可复跑的结果验证记录。", "他人可以按相同步骤复核结果，记录能说明样本偏差和结论适用范围。"],
+    failure: ["重建一次问题排查的时间线，写明现象、假设、定位依据、修复和回归步骤。", "能够复现问题与修复效果，并用回归检查验证根因判断。"],
+  };
+  const findings = report.executiveSummary.concerns.length ? report.executiveSummary.concerns : report.executiveSummary.strengths;
+  const seen = new Set<string>();
+  return findings.filter((item) => {
+    if (!item.evidenceIds.length || seen.has(item.fieldName)) return false;
+    seen.add(item.fieldName); return true;
+  }).slice(0, 3).map((item, index) => {
+    const [action, acceptance] = tasks[item.fieldId.split(":").at(-1)!] ?? ["围绕已讨论的实现整理可复现案例，写明实际动作、选择依据和结果。", "他人能够复现案例，并核对个人贡献与结论依据。"];
+    return { title: `${item.projectName}：${item.fieldName}`, priority: index === 0 ? "first" : "next",
+      rationale: { text: `围绕“${item.projectName}”中已讨论的“${item.fieldName}”，把口头说明转成可复核的材料。`, evidenceIds: item.evidenceIds }, action, acceptance };
+  });
+}
+
+export function reportSections(report: Pick<CandidateReportArtifact, "narrative"> & { projects: Array<{ projectId: string; name: string; fields: Array<{ evidence: Array<{ statement: string; evidenceId: string }> }> }>; competencies: Array<{ competencyId: string; name: string }> }): Array<{ title: string; paragraphs: NarrativeSentence[] }> {
+  const narrative = report.narrative;
+  const sections = narrative ? [
+    { title: "综合判断", paragraphs: narrative.overall },
+    ...(narrative.sections ?? []),
+    ...(narrative.insights ? [] : narrative.projects.map((item) => ({ title: report.projects.find((project) => project.projectId === item.projectId)?.name ?? item.projectId, paragraphs: item.summary }))),
+    ...(narrative.insights ? [] : narrative.competencies.map((item) => ({ title: report.competencies.find((competency) => competency.competencyId === item.competencyId)?.name ?? item.competencyId, paragraphs: [...item.boundary, ...item.highlights] }))),
+    { title: "招聘方下一步建议", paragraphs: narrative.recruiterNextSteps },
+    { title: "候选人反馈", paragraphs: narrative.candidateFeedback },
+  ] : report.projects.map((project) => ({ title: project.name, paragraphs: project.fields.flatMap((field) =>
+    field.evidence.map((item) => ({ text: item.statement, evidenceIds: [item.evidenceId] }))) }));
+  const seen = new Map<string, NarrativeSentence>();
+  return sections.map((section) => ({ ...section, paragraphs: section.paragraphs.flatMap((item) => {
+    if (!item.evidenceIds.length) return [];
+    const key = item.text.trim(); const previous = seen.get(key);
+    if (previous) { previous.evidenceIds = [...new Set([...previous.evidenceIds, ...item.evidenceIds])]; return []; }
+    const sentence = { text: item.text, evidenceIds: [...item.evidenceIds] };
+    seen.set(key, sentence); return [sentence];
+  }) })).filter((section) => section.paragraphs.length > 0);
+}
+
+export function reportEvidence(report: { projects: Array<{ fields: Array<{ evidence: Array<{ turnId: string; answerQuote: string; question: string; evidenceId: string }> }> }> }) {
+  const quotes = new Map<string, { question: string; answerQuote: string; evidenceIds: string[] }>();
+  for (const item of report.projects.flatMap((project) => project.fields.flatMap((field) => field.evidence))) {
+    const key = `${item.turnId}:${item.answerQuote}`;
+    const quote = quotes.get(key) ?? { question: item.question, answerQuote: item.answerQuote, evidenceIds: [] };
+    if (!quote.evidenceIds.includes(item.evidenceId)) quote.evidenceIds.push(item.evidenceId);
+    quotes.set(key, quote);
   }
-  for (const item of findings) {
-    lines.push(
-      `- **${escapeMarkdown(item.projectName)} / ${escapeMarkdown(item.fieldName)}**：${escapeMarkdown(item.conclusion)}`,
-      `  - Evidence: ${item.evidenceIds.map((id) => `\`${id}\``).join("、")}`,
-    );
-  }
+  return [...quotes.values()];
 }
 
 export function renderInterviewReportMarkdown(report: CandidateReportArtifact): string {
-  const lines = [
-    `# 候选人评估报告：${escapeMarkdown(report.candidate.name)}`,
-    "",
-    `- Session: \`${report.sessionId}\``,
-    `- 目标岗位: ${escapeMarkdown(report.role.name)}`,
-    `- 报告状态: ${report.status}`,
-    `- 生成时间: ${report.generatedAt}`,
-    `- 候选人填写技能: ${report.candidate.skills.map(escapeMarkdown).join("、") || "未填写"}`,
-    "",
-    "## 综合判断",
-    "",
-    `**建议：${recommendationLabel(report.executiveSummary.recommendation)}**`,
-    "",
-    escapeMarkdown(report.executiveSummary.assessment),
-    "",
-    ...report.executiveSummary.rationale.map((item) => `- ${escapeMarkdown(item)}`),
-  ];
-  renderFindings(lines, "已验证优势", report.executiveSummary.strengths, "当前没有达到充分证据标准的优势结论。");
-  renderFindings(lines, "风险与关注项", report.executiveSummary.concerns, "当前没有发现证据偏弱或相互冲突的结论。");
-  lines.push("", "## 证据缺口", "");
-  if (report.executiveSummary.evidenceGaps.length === 0) lines.push("当前通用调查维度均已获得回答证据。");
-  for (const gap of report.executiveSummary.evidenceGaps) {
-    lines.push(
-      `- **${escapeMarkdown(gap.projectName)} / ${escapeMarkdown(gap.fieldName)}**：${escapeMarkdown(gap.reason)}`,
-      `  - 下一步：${escapeMarkdown(gap.recommendedAction)}`,
-    );
+  const lines = [`# 候选人评估报告：${escapeMarkdown(report.candidate.name)}`, "",
+    `- 目标岗位：${escapeMarkdown(report.role.name)}`, `- 报告状态：${report.status}`, `- 生成时间：${report.generatedAt}`, ""];
+  if (report.assessment) {
+    const { match, dimensions, methodology } = report.assessment;
+    lines.push("## 岗位匹配度评分", "", `**${match.score === null ? "暂不出分" : `${match.score} / 100${match.status === "provisional" ? "（暂定）" : ""}`}** · 岗位要求覆盖率 ${match.coveragePercent}%`, "", escapeMarkdown(match.explanation), "");
+    if (match.blockers.length) lines.push("必须要求仍需核验：", ...match.blockers.map((text) => `- ${escapeMarkdown(text)}`), "");
+    lines.push("## 能力画像", "", "| 能力 | 本次展示深度分 | 展示边界 |", "| --- | --- | --- |");
+    for (const dimension of dimensions) lines.push(`| ${escapeMarkdown(dimension.name)} | ${dimension.score ?? "未评估"} | ${escapeMarkdown(dimension.level)} |`);
+    lines.push("", "雷达图见报告页面及打印版；未评估维度不按零分绘制。", "", "### 评分方法", "", ...methodology.map((text) => `- ${escapeMarkdown(text)}`), "");
   }
-  lines.push("", "## 招聘方下一步建议", "", ...report.executiveSummary.nextSteps.map((item) => `- ${escapeMarkdown(item.trim())}`));
-  lines.push(
-    "",
-    "## 岗位与评估范围",
-    "",
-    `### ${escapeMarkdown(report.role.name)}`,
-    "",
-    escapeMarkdown(report.role.description),
-  );
-  if (report.role.requirements.length > 0) {
-    lines.push("", "岗位要求：", "", ...report.role.requirements.map((item) => `- ${escapeMarkdown(item)}`));
+  const sections = report.narrative ? reportSections(report) : [];
+  if (!sections.length && !reportEvidence(report).length) lines.push("本次尚无可引用的回答，请完成面试后查看报告。", "");
+  for (const section of sections) {
+    lines.push(`## ${escapeMarkdown(section.title)}`, "");
+    for (const item of section.paragraphs) lines.push(`${escapeMarkdown(item.text)} [Evidence: ${item.evidenceIds.join(", ")}]`, "");
+  }
+  const insights = reportInsights(report);
+  if (insights.length) {
+    lines.push("## 优势与劣势分析", "");
+    for (const insight of insights) lines.push(`### ${insight.kind === "strength" ? "优势" : insight.kind === "risk" ? "需核验" : "待提升"} · ${escapeMarkdown(insight.title)}`, "", `${escapeMarkdown(insight.explanation.text)} [Evidence: ${insight.explanation.evidenceIds.join(", ")}]`, "");
+  }
+  const plan = reportImprovementPlan(report);
+  if (plan.length) {
+    lines.push("## 能力提升路径", "");
+    for (const [index, item] of plan.entries()) lines.push(`### ${index + 1}. ${escapeMarkdown(item.title)}`, "", `优先级：${{ first: "优先完成", next: "随后推进", stretch: "进阶挑战" }[item.priority]}`, "",
+      `依据：${escapeMarkdown(item.rationale.text)} [Evidence: ${item.rationale.evidenceIds.join(", ")}]`, "", `练习与产出：${escapeMarkdown(item.action)}`, "", `完成标准：${escapeMarkdown(item.acceptance)}`, "");
   }
   if (report.requirementMatrix?.length) {
-    lines.push("", "## 岗位要求匹配", "");
-    for (const item of report.requirementMatrix) lines.push(`- **${escapeMarkdown(item.text)}** (${item.priority})：${item.status}；已展示层级 ${item.reachedDepth ?? "未知"}；Evidence: ${item.evidenceIds.join(", ") || "无"}`);
-  }
-  lines.push("", "## 分项目详细评估");
-  for (const project of report.projects) {
-    lines.push("", `### 项目：${escapeMarkdown(project.name)}`, "", `候选人填写：${escapeMarkdown(project.candidateInput)}`);
-    for (const field of project.fields) {
-      lines.push("", `#### ${escapeMarkdown(field.name)} — ${field.status}`, "", escapeMarkdown(field.conclusion));
-      if (field.evidence.length > 0) {
-        lines.push("", "证据：");
-        for (const item of field.evidence) {
-          lines.push(
-            "",
-            `- Evidence \`${item.evidenceId}\` / Turn \`${item.turnId}\``,
-            `  - 问题：${escapeMarkdown(item.question)}`,
-            `  - 原话：“${escapeMarkdown(item.answerQuote)}”`,
-            `  - 判断：${escapeMarkdown(item.statement)} (${item.polarity})`,
-          );
-        }
-      }
-      if (field.recommendation) lines.push("", `核验建议：${escapeMarkdown(field.recommendation)}`);
+    lines.push("## 岗位要求匹配", "");
+    for (const row of report.requirementMatrix) {
+      const sentence = report.narrative?.requirements?.find((item) => item.requirementId === row.requirementId)?.conclusion;
+      lines.push(`- ${escapeMarkdown(row.text)}：${row.status}${sentence?.evidenceIds.length ? `；${escapeMarkdown(sentence.text)} [Evidence: ${sentence.evidenceIds.join(", ")}]` : ""}`);
     }
+    lines.push("");
   }
-  lines.push("", "## 未展开线索", "");
-  for (const lead of report.leads.filter((item) => item.status === "dropped")) lines.push(`- ${escapeMarkdown(lead.text)}（原话来源 Turn ${lead.turnId}）`);
-  lines.push("", "## 证据强度指数", "", "指数描述本次证据强度，不是候选人能力总分。", "");
-  for (const competency of report.competencies) lines.push(`- ${escapeMarkdown(competency.name)}：${competency.evidenceStrengthIndex ?? "未知"}；置信度 ${competency.confidence.toFixed(2)}；已展示层级 ${competency.reachedDepth ?? "未知"}`);
-  lines.push("", "## 矛盾记录", "");
-  if (report.contradictions.length === 0) lines.push("本次面试未记录候选人陈述矛盾。");
-  for (const item of report.contradictions) {
-    lines.push(`- ${item.status}: ${escapeMarkdown(item.projectName ?? "未归属项目")} — ${escapeMarkdown(item.claim)}`);
-  }
-  lines.push("", "## 评估依据", "", ...report.evaluationBasis.map((item) => `- ${escapeMarkdown(item)}`));
-  lines.push("", "## 报告边界", "", ...report.limitations.map((item) => `- ${escapeMarkdown(item)}`));
-  lines.push("", "## 报告完整性", "", `- Valid: ${report.integrity.valid}`);
-  for (const error of report.integrity.errors) lines.push(`- ${escapeMarkdown(error)}`);
-  lines.push("");
+  const gaps = report.projects.map((project) => ({ name: project.name, fields: project.fields.filter((field) => field.status === "missing").map((field) => field.name) })).filter((project) => project.fields.length);
+  if (gaps.length) lines.push("## 调查范围与未覆盖内容", "", "以下内容尚未取得可引用回答，不作能力结论。", "",
+    ...gaps.map((project) => `- ${escapeMarkdown(project.name)}：${project.fields.map(escapeMarkdown).join("、")}`), "");
+  const leads = [...new Set(report.leads.filter((item) => item.status === "dropped").map((item) => item.text))];
+  if (leads.length) lines.push("## 未展开线索", "", ...leads.map((text) => `- ${escapeMarkdown(text)}`), "");
+  lines.push("## 报告边界", "", ...report.limitations.map((text) => `- ${escapeMarkdown(text)}`), "");
+  const quotes = reportEvidence(report);
+  if (quotes.length) lines.push("## 原话索引", "");
+  for (const quote of quotes) lines.push(`- Evidence: ${quote.evidenceIds.join(", ")}`, `  - 问题：${escapeMarkdown(quote.question)}`, `  - 原话：“${escapeMarkdown(quote.answerQuote)}”`, "");
+  if (!report.integrity.valid) lines.push("报告完整性校验未通过。", ...report.integrity.errors.map(escapeMarkdown));
   return lines.join("\n");
 }
 

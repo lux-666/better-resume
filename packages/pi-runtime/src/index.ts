@@ -1,4 +1,4 @@
-import { interviewTimeBudgetExhausted } from "../../interview-core/src/investigation.ts";
+import { interviewTimeBudgetExhausted, projectPauseReason } from "../../interview-core/src/investigation.ts";
 import { createHash } from "node:crypto";
 import { buildSummary } from "../../interview-core/src/memory.ts";
 import type { Claim } from "../../interview-core/src/types.ts";
@@ -11,7 +11,7 @@ import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import {
   getActiveInterviewContext,
-  fieldConclusion, projectLeads, groundedAnswerClaims, validateCandidateAside,
+  fieldConclusion, projectLeads, groundedAnswerClaims, validateCandidateAside, saturatedFieldIds, projectInvestigationBlockers, validateProjectSwitch,
   validateCandidateQuestion,
   validateCompletion,
   type InterviewDecision,
@@ -156,14 +156,6 @@ function normalizeQuestion(value: string): string {
   return value.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
 }
 
-function saturatedFieldIds(state: InterviewState): string[] {
-  return state.report.fields.flatMap((field) => {
-    const turns = state.turns.filter((turn) => turn.reportFieldId === field.id).slice(-2);
-    return turns.some((turn) => turn.disposition === "skip_request") || (turns.length === 2 &&
-      (normalizeQuestion(turns[0].answer) === normalizeQuestion(turns[1].answer) || turns.every((turn) => turn.disposition === "vague"))) ? [field.id] : [];
-  });
-}
-
 function normalizeQuestionOutput(value: AskCandidate): AskCandidate {
   const question = value.question.replace(/[。.!！]$/u, "？");
   if (!/[?？]/.test(value.acknowledgement ?? "")) return { ...value, question };
@@ -236,13 +228,15 @@ export function buildReportAgentView(state: InterviewState, projectId?: string) 
 }
 
 function interviewFocusProjectId(state: InterviewState): string {
-  const openContradiction = state.report.contradictions.find((item) => item.status === "open" && item.projectId);
+  const openContradiction = state.report.contradictions.find((item) => item.status === "open" && item.projectId && !projectPauseReason(state, item.projectId));
   if (openContradiction?.projectId) return openContradiction.projectId;
+  const latestProject = state.turns.at(-1)?.projectId;
+  if (latestProject && !projectPauseReason(state, latestProject)) return latestProject;
   const targetFieldId = state.traces.at(-1)?.targetFieldId;
   const activeField = state.report.fields.find((field) => field.id === targetFieldId);
-  if (activeField) return activeField.projectId;
+  if (activeField && !projectPauseReason(state, activeField.projectId)) return activeField.projectId;
   const nextField = state.report.fields
-    .filter((field) => field.status === "missing")
+    .filter((field) => field.status === "missing" && !projectPauseReason(state, field.projectId))
     .toSorted((left, right) => right.importance - left.importance)[0];
   return nextField?.projectId ?? state.candidate.projects[0]?.id ?? "";
 }
@@ -270,12 +264,14 @@ export function buildInterviewAgentView(state: InterviewState, knowledge?: Probe
       description: focusedProject.description,
       claims: relevantProjectClaims(state, focusedProject.id).map(({ id, text, status }) => ({ id, text, status })),
     },
+    currentProjectBlockers: state.turns.at(-1)?.projectId ? projectInvestigationBlockers(state, state.turns.at(-1)!.projectId!) : [],
     openLeads: projectLeads(state).filter((lead) => lead.status === "open").slice(-12),
     knowledge: knowledge?.health() ?? { status: "unconfigured", count: 0 },
     ...(knowledge?.health().status === "ready" ? {} : { playbook: playbookFor(state) }),
     projectIndex: state.candidate.projects.map((project) => ({
       id: project.id,
       name: project.name,
+      pauseReason: projectPauseReason(state, project.id),
       fields: state.report.fields.filter((field) => field.projectId === project.id).map((field) => ({
         id: field.id,
         name: field.name,
@@ -506,6 +502,7 @@ export async function decideNextStepWithAgent(options: {
         throw new EvidenceValidationError("Candidate repeated the answer for this field; choose another field or finish");
       }
       try {
+        validateProjectSwitch(options.state, normalized.targetFieldId);
         if (normalized.transition) validateCandidateAside(normalized.transition);
         if (options.state.phaseVersion === 3 && !normalized.targetDepth) throw new Error("targetDepth is required");
         if (options.state.turns.some((turn) => turn.reportFieldId === normalized.targetFieldId && turn.disposition === "skip_request")) throw new Error("Candidate skipped this topic");
@@ -562,9 +559,10 @@ export async function decideNextStepWithAgent(options: {
       "You are a professional, restrained peer interviewer. Be curious and specific, use plain Chinese, never praise, judge, or narrate internal record keeping. Do not say 记录为、按不确定处理、证据、字段、维度、Report、Evidence.",
       "Your goal is a credible Candidate Report that identifies the depth demonstrated and the limits observed, not filling boxes. Progress along statement/detail/rationale/tradeoff/transfer. Pick one focused request; never demand all levels at once.",
       "Set targetDepth for each question. Prefer a relevant open lead and record followsLeadId only when this question actually follows it. Never follow the same lead twice. After two vague attempts at a level, change topic; reaching level 5 does not require further escalation.",
+      "Follow a concrete thread while answers provide new information. Depth is an opportunity, not a quota. If the candidate says they cannot recall or did not handle a detail, accept that boundary; do not ask the same fact with different wording or demand harder rationale. At most try ONE easier, concrete angle. Two consecutive vague/skipped/repeated answers across ANY fields in a project mean move on. Honor an explicit request to change projects immediately. Never target a project with pauseReason, even to fill missing fields or resolve contradictions; retain those as report limitations. When no other project is available, use finish_interview to invite candidate-led discussion. Do not re-ask supported facts or move away from a productive answer just to cover the portfolio.",
       "Use a short neutral transition when changing projects. Acknowledgement and transition contain no question or assessment. Missing/weak support is not proof of lack of ability.",
       "First call read_report. Then choose the single most valuable investigation step.",
-      "When recall is available, consult earlier evidence/turns for the same skill before changing projects or asking a possibly repeated question. The summary contains source-linked excerpts, not new facts. Resume scope is unverified candidate material. Recall at most twice. If timeBudgetExhausted is true, finish now; missing information remains a report limitation.",
+      "When recall is available, consult earlier evidence/turns for the same skill before changing projects or asking a possibly repeated question. The summary contains source-linked excerpts, not new facts. Resume scope is unverified candidate material. Recall at most twice. timeBudgetExhausted is only a time reminder. Never finish or abandon a project just because time has elapsed.",
       "If knowledge is ready and the candidate mentions a concrete mechanism, metric or decision, explicitly call retrieve_probe_knowledge before asking. Build its query yourself from their words or your investigation intent. fieldKind is ownership/mechanism/measurement/failure; targetDepth is optional. At most two retrieval calls per turn.",
       "Knowledge is a reference for question construction only, never candidate evidence or an assumption about their work. Do not use 通常应该 or 标准做法是. Record only retrieved IDs actually used in ask_candidate.knowledgeIds. If retrieval is unavailable or fails, use the returned static playbook and continue without inventing knowledge citations.",
       "Knowledge hit.text contains project-authored interviewer notes: check the applicable scenario, choose one verification direction, and follow its avoid-assumptions advice. hit.source preserves upstream questions and focus points for provenance, not an authoritative answer or a question to copy. A shallow-answer signal is a reason to verify, not a verdict about this candidate.",
@@ -576,7 +574,7 @@ export async function decideNextStepWithAgent(options: {
       "Do not pursue a saturated field after two repeated answers; switch fields or finish when no required field is missing.",
       "Do not mechanically enumerate report fields. Ask one concise neutral question and never reveal internal evaluation terms.",
       "Ask for exactly one fact, decision, reason, method, or result. Do not combine responsibility, decisions, delivery, metrics, and causes in one question.",
-      "When completion.allowed is true, use finish_interview; if rejected, ask about one blocker.",
+      "When there is no valuable remaining investigation and completion.allowed is true, use finish_interview. This opens a candidate-led discussion before closing; if rejected, ask about one blocker.",
       "Do not output prose outside tools.",
     ].join("\n"),
     telemetry: options.telemetry,

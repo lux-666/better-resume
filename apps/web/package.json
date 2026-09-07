@@ -9,6 +9,7 @@
     "@better-resume/api-contract": "*",
     "pdfjs-dist": "^6.3.289",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "tesseract.js": "^7.0.0"
   }
 }

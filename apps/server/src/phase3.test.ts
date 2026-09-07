@@ -63,6 +63,7 @@ test("20-second model wait exposes safe progress before the POST finishes; obser
   let progress: any[] = [];
   for (let i = 0; i < 100; i++) { progress = await app.get("/api/interviews/slow/progress"); if (progress.some((run) => run.stage === "report")) break; await new Promise((r) => setTimeout(r, 10)); }
   assert.equal(settled, false); assert.equal(progress.at(-1).status, "running");
+  assert.ok(progress.at(-1).steps.some((step: { runningLabel: string; status: string }) => step.runningLabel === "正在思考如何补充报告" && step.status === "running"));
   assert.doesNotMatch(JSON.stringify(progress), /PRIVATE_ANSWER|sourceQuote|software_engineering|report_agent/);
   const events = await fetch(app.url + "/api/interviews/slow/events"); const reader = events.body!.getReader();
   const first = await reader.read(); assert.match(new TextDecoder().decode(first.value), /event: snapshot/); await reader.cancel();
@@ -72,6 +73,26 @@ test("20-second model wait exposes safe progress before the POST finishes; obser
   release(); const result = await submitted; assert.equal(result.status, 200); assert.equal(result.body.state.turns.length, 1);
   const stats = await app.get("/api/interviews/slow/telemetry"); assert.equal(stats.summary.modelRequestCount, 2); assert.equal(stats.summary.providerRetryCount, 0);
   assert.equal(stats.traces.at(-1).status, "succeeded"); assert.ok(stats.traces.at(-1).durationMs >= 20_000);
+});
+test("SSE sends ordered trajectory changes without waiting for a completed answer and reconnect restores steps", async (t) => {
+  const app = await fixture(t); const state = active("timeline"); app.store.create(state);
+  const events = await fetch(app.url + "/api/interviews/timeline/events", { signal: AbortSignal.timeout(5000) });
+  const reader = events.body!.getReader(); const decoder = new TextDecoder();
+  const initial = await reader.read(); assert.match(decoder.decode(initial.value), /event: snapshot/);
+  const collector = app.hub.create({ sessionId: "timeline", commandId: "pending-answer", operation: "answer" });
+  const agent = collector.start("report_agent", "agent");
+  const model = collector.start("model_request", "model", agent.spanId);
+  let buffer = "";
+  while (!buffer.includes("正在思考如何补充报告")) { const chunk = await reader.read(); assert.equal(chunk.done, false); buffer += decoder.decode(chunk.value, { stream: true }); }
+  assert.match(buffer, /event: progress/); assert.match(buffer, /"status":"running"/);
+  collector.finish(model); collector.finish(agent); collector.end("succeeded");
+  await reader.cancel();
+  const restored = await fetch(app.url + "/api/interviews/timeline/events", { signal: AbortSignal.timeout(5000) });
+  const resumed = restored.body!.getReader();
+  const snapshot = decoder.decode((await resumed.read()).value);
+  assert.match(snapshot, /"label":"分析回答并整理报告"/); assert.match(snapshot, /"status":"succeeded"/);
+  assert.doesNotMatch(snapshot, /model_request|sourceQuote|context/);
+  await resumed.cancel();
 });
 test("whole-command timeout releases ownership, keeps raw answer, and prevents late mutation", { timeout: 5000 }, async (t) => {
   let release!: () => void; const held = new Promise<void>((resolve) => { release = resolve; });
@@ -125,6 +146,35 @@ test("legacy command migration preserves payloads, leases and idempotent respons
     assert.deepEqual(store.claim(active("migration"), { commandId: "command", questionId: "migration:1", expectedStateVersion: 1, answer: "original" }).replay, { commandId: "command" });
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+test("a candidate can change projects and reach open discussion without exhausting the turn budget", async (t) => {
+  const app = await fixture(t); const state = active("change-project"); app.store.create(state);
+  const first = await app.post("/api/interviews/change-project/answer", { ...command(state), answer: "我不清楚，换个项目吧" });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.state.report.fields.find((f: { id: string }) => f.id === first.body.decision.targetFieldId).projectId, state.candidate.projects[1].id);
+  const second = await app.post("/api/interviews/change-project/answer", { ...command(first.body.state), answer: "这个项目我都记不清了" });
+  assert.equal(second.status, 200); assert.equal(second.body.state.openFloor, true);
+  assert.equal(second.body.state.turns.length, 2); assert.equal(second.body.state.status, "active");
+  assert.ok(second.body.state.report.fields.some((f: { status: string }) => f.status === "missing"));
+});
+test("open discussion answers candidate questions without evidence, survives reload and replays closing", async (t) => {
+  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+  faux.setResponses([fauxAssistantMessage(fauxToolCall("respond_to_candidate", { kind: "question", response: "建议准备一个固定输入的回归案例，说明你如何定位差异并验证修改。" }), { stopReason: "toolUse" })]);
+  const app = await fixture(t, { ...demo, interview: { mode: "llm", model: faux.getModel(), streamFn: (...args) => models.streamSimple(...args) } });
+  const state = active("open-discussion"); state.maxTurns = 20;
+  while (!state.openFloor) { const response = fixedProfileResponse("strong", state); submitAnswer(state, response.answer, response.evidence, response.disposition); }
+  app.store.create(state);
+  const cmd = { ...command(state), answer: "你建议我怎么准备后续面试？" };
+  const answered = await app.post("/api/interviews/open-discussion/answer", cmd);
+  assert.equal(answered.status, 200); assert.equal(answered.body.state.openFloor, true);
+  assert.equal(answered.body.state.evidence.length, state.evidence.length);
+  assert.match(answered.body.state.turns.at(-1).interviewerResponse, /固定输入/);
+  assert.deepEqual((await app.post("/api/interviews/open-discussion/answer", cmd)).body, answered.body);
+  const restored = await app.get("/api/interviews/open-discussion/state");
+  const close = { ...command(restored.state, "finish"), answer: "结束面试" };
+  const closed = await app.post("/api/interviews/open-discussion/answer", close);
+  assert.equal(closed.status, 200); assert.equal(closed.body.state.status, "completed");
+  assert.deepEqual((await app.post("/api/interviews/open-discussion/answer", close)).body, closed.body);
+});
 test("report narrative, inline/download facts, supplement and regeneration share an accepted state version", async (t) => {
   const app = await fixture(t); const state = active("report");
   while (state.status === "active") { const answer = fixedProfileResponse("strong", state); submitAnswer(state, answer.answer, answer.evidence, answer.disposition); }
@@ -134,6 +184,11 @@ test("report narrative, inline/download facts, supplement and regeneration share
   for (let i = 0; i < 30; i++) { bundle = await app.get("/api/interviews/report/report"); if (bundle.report.narrativeStatus === "ready") break; await new Promise((r) => setTimeout(r, 10)); }
   assert.equal(bundle.report.narrativeStatus, "ready"); assert.ok(Check(InterviewReportResponseSchema, bundle));
   assert.deepEqual(bundle, await app.get("/api/interviews/report/report"));
+  const regenerated = await app.post("/api/interviews/report/report-retry", {});
+  assert.equal(regenerated.status, 200);
+  assert.equal(regenerated.body.report.narrativeStatus, "pending");
+  assert.deepEqual(regenerated.body.report.narrative, bundle.report.narrative);
+  assert.equal(regenerated.body.report.narrativeSourceVersion, bundle.report.narrativeSourceVersion);
   const body = { commandId: "supplement", questionId: "report:supplement:project_enterprise_rag", expectedStateVersion: state.traces.length,
     answer: "我又补充了基于固定样本对照的验收记录。", projectId: "project_enterprise_rag" };
   const supplemented = await app.post("/api/interviews/report/supplement", body); assert.equal(supplemented.status, 200);

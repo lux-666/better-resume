@@ -62,5 +62,5 @@ test("14-turn source-derived summary stays within 1500 chars and retains grounde
   const legacySnapshot = { ...state, memory: { summary: { ...summary, version: 999 } } };
   assert.deepEqual(buildSummary(legacySnapshot), summary);
   state.timeBudgetMinutes = 20; state.startedAt = new Date(Date.now() - 21 * 60_000).toISOString();
-  assert.equal(validateCompletion(state).forced, true);
+  assert.equal(validateCompletion(state).forced, false);
 });

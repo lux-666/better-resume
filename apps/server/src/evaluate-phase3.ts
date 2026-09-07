@@ -46,7 +46,7 @@ async function runProfile(profile: DemoProfile, special?: "question_back" | "ski
       const kind = trace.targetFieldId?.split(":").at(-1) ?? "ownership";
       const field = current.state.report.fields.find((item) => item.id === trace.targetFieldId);
       const contradictory = current.state.report.contradictions.some((item) => item.projectId === field?.projectId && item.status === "open");
-      const answer = special === "skip_request" && index === 0 ? "我想跳过这个问题。"
+      const answer = current.state.openFloor ? "没有了" : special === "skip_request" && index === 0 ? "我想跳过这个问题。"
         : contradictory ? profile.script.clarification ?? profile.script.ownership
         : profile.profile === "boundary" && (trace.targetDepth ?? 1) >= 3 ? profile.script.boundary
         : profile.script[kind] ?? profile.script.ownership;

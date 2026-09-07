@@ -1,7 +1,7 @@
 import { runModelStage } from "./model-stage.ts";
 import type { InterviewState } from "../../../packages/interview-core/src/index.ts";
-import { buildInterviewReportBundle } from "../../../packages/interview-core/src/report-output.ts";
-import { demoNarrative, renderNarrativeMarkdown } from "../../../packages/interview-core/src/narrative.ts";
+import { buildInterviewReportBundle, renderInterviewReportMarkdown } from "../../../packages/interview-core/src/report-output.ts";
+import { demoNarrative } from "../../../packages/interview-core/src/narrative.ts";
 import type { NarrativeStatus, ReportNarrative } from "../../../packages/api-contract/src/narrative.ts";
 import { generateNarrative } from "../../../packages/pi-runtime/src/narrative.ts";
 import type { InterviewStore } from "./store.ts";
@@ -17,12 +17,13 @@ export class NarrativeService {
     if (state.status !== "completed") return;
     const version = stateVersion(state);
     const row = this.row(state.sessionId);
-    if (row?.state_version === version && (row.status !== "failed" || !retry)) return;
+    if (row?.state_version === version && !retry) return;
     const old = this.jobs.get(state.sessionId);
     if (old?.version === version) return;
     old?.abort.abort(new Error("Narrative source version changed"));
     const collector = this.hub.create({ sessionId: state.sessionId, operation: "narrative", stateVersion: version });
-    this.store.database.prepare("INSERT OR REPLACE INTO report_narratives VALUES(?,?,'pending',NULL,?)").run(state.sessionId, version, collector.trace.traceId);
+    this.store.database.prepare("INSERT OR REPLACE INTO report_narratives VALUES(?,?,'pending',?,?)")
+      .run(state.sessionId, version, row?.state_version === version ? row.result : null, collector.trace.traceId);
     const abort = new AbortController();
     const promise = Promise.resolve().then(async () => {
       const timer = setTimeout(() => abort.abort(new Error("Narrative deadline exceeded")), this.timeoutMs); timer.unref();
@@ -55,7 +56,7 @@ export class NarrativeService {
     bundle.report.narrativeStatus = row?.state_version === stateVersion(state) ? row.status : "not_requested";
     if (row?.state_version === stateVersion(state)) {
       bundle.report.narrativeSourceVersion = row.state_version;
-      if (row.status === "ready" && row.result) { bundle.report.narrative = JSON.parse(row.result); bundle.markdown += "\n" + renderNarrativeMarkdown(bundle.report.narrative!); }
+      if (row.result) { bundle.report.narrative = JSON.parse(row.result); bundle.markdown = renderInterviewReportMarkdown(bundle.report); }
       if (row.status === "failed") { bundle.report.limitations.push("叙述层生成失败，可重试；确定性报告仍可使用。"); bundle.markdown += "\n叙述层生成失败，可重试；确定性报告仍可使用。\n"; }
     }
     return bundle;

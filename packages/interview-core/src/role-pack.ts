@@ -5,7 +5,7 @@ import type { InterviewState, ReportField } from "./types.ts";
 import { fieldConclusion } from "./investigation.ts";
 const generic = ["ownership", "mechanism", "measurement", "failure"];
 export function jdLines(state: InterviewState): string[] { return requirementLines(state.intake.job?.requirements); }
-function plannedFields(state: InterviewState, pack: RolePack): ReportField[] {
+export function plannedFields(state: InterviewState, pack: RolePack): ReportField[] {
   return state.candidate.projects.flatMap((project) => pack.fieldPlan.filter((plan) => plan.appliesToProjects === "all" || plan.requirementIds.some((id) => pack.projectRelevance[project.id]?.includes(id))).map((plan) => ({
     id: `${project.id}:${plan.fieldKind}`, projectId: project.id, competencyId: plan.competencyId, name: plan.name,
     description: pack.requirements.filter((r) => plan.requirementIds.includes(r.id)).flatMap((r) => [r.text, ...r.verifiableSignals]).join("；") || state.report.fields.find((f) => f.id === `${project.id}:${plan.fieldKind}`)?.description || plan.name,

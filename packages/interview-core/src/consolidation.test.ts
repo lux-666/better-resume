@@ -11,7 +11,7 @@ test("generic and Role Pack paths preserve the same complete numbered JD lines",
   const role = buildInterviewRole({ job }); const state = createInterviewState("jd", role, buildCandidateFromIntake(intake, role), intake);
   assert.deepEqual(role.requirements, lines); assert.deepEqual(jdLines(state), role.requirements); assert.deepEqual(requirementLines(undefined), []);
 });
-test("time limit boundary and completion share one policy, with absent or invalid dates remaining unexpired", () => {
+test("time reminder boundary does not force completion, with absent or invalid dates remaining unexpired", () => {
   const start = Date.parse("2026-09-01T00:00:00Z");
   const budget = { startedAt: new Date(start).toISOString(), timeBudgetMinutes: 20 };
   assert.equal(interviewTimeBudgetExhausted(budget, start + 20 * 60_000 - 1), false);
@@ -20,7 +20,7 @@ test("time limit boundary and completion share one policy, with absent or invali
   assert.equal(interviewTimeBudgetExhausted({ ...budget, startedAt: "invalid" }, start), false);
   const intake = { candidate: { name: "Test", skills: [], projects: [{ name: "服务", description: "实现系统" }] } };
   const role = buildInterviewRole({}); const state = createInterviewState("time", role, buildCandidateFromIntake(intake, role), intake);
-  Object.assign(state, budget, { startedAt: new Date(Date.now() - 21 * 60_000).toISOString() }); assert.equal(validateCompletion(state).forced, true);
+  Object.assign(state, budget, { startedAt: new Date(Date.now() - 21 * 60_000).toISOString() }); assert.equal(validateCompletion(state).forced, false);
 });
 test("single-source workflow documents the live boundaries and regression gate", () => {
   const doc = readFileSync(new URL("../../../docs/development/single-source-workflow.md", import.meta.url), "utf8");

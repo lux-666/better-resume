@@ -1,4 +1,5 @@
 import type { RunProgress, RunStatus, Stage, TelemetrySpan, TelemetryTrace } from "./telemetry.ts";
+import { projectAgentSteps } from "./trajectory.ts";
 
 export type Measurement = { value: number | null; availability: "complete" | "partial" | "unavailable"; known: number; total: number };
 function sum(values: Array<number | undefined>): Measurement {
@@ -58,5 +59,6 @@ export function projectRunProgress(trace: TelemetryTrace, now = Date.now()): Run
     status: (trace.status ?? "interrupted") as RunStatus, stage: latest ? stageForSpan(latest)! : "received", completedStages,
     startedAt: trace.startedAt, elapsedMs: trace.durationMs ?? Math.max(0, now - Date.parse(trace.startedAt)),
     retryCount: summarizeTelemetry([trace]).providerRetryCount,
+    steps: projectAgentSteps(trace, now),
   };
 }

@@ -7,7 +7,7 @@ import {
   createFixtureCandidate,
   createInterviewState,
   normalizeInterviewIntake,
-  recordAnswer,
+  recordAnswer, submitAnswer,
   type InterviewIntake,
   type InterviewState,
 } from "../../../packages/interview-core/src/index.ts";
@@ -178,6 +178,7 @@ async function runProfile(profile: ModelProfileName): Promise<boolean> {
     );
     initialTelemetry.end("succeeded");
     while (state.status === "active") {
+      if (state.openFloor) { submitAnswer(state, "没有了"); break; }
       const trace = state.traces.at(-1)!;
       const response = fixedProfileResponse(profile, state);
       const turnTelemetry = new TelemetryCollector({ sessionId: state.sessionId, operation: "evaluation_answer" });

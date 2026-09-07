@@ -73,7 +73,7 @@ export function useInterviewSession() {
     if (!session?.questionId || (intent === "answer" && !answer.trim()) || isProcessing) return;
     const id = session.state.sessionId;
     void runOnce("submit", async () => {
-      const command: AnswerCommand = pending.current ?? { commandId: pendingCommandId || crypto.randomUUID(), questionId: session.questionId!, expectedStateVersion: session.stateVersion, answer: intent === "skip" ? "我想跳过这个问题。" : intent === "clarify" ? answer.trim() || "请说明这个问题的含义或范围。" : answer, ...(intent !== "answer" ? { intent } : {}) };
+      const command: AnswerCommand = pending.current ?? { commandId: pendingCommandId || crypto.randomUUID(), questionId: session.questionId!, expectedStateVersion: session.stateVersion, answer: intent === "finish" ? "没有其他补充，结束面试。" : intent === "skip" ? "我想跳过这个问题。" : intent === "clarify" ? answer.trim() || "请说明这个问题的含义或范围。" : answer, ...(intent !== "answer" ? { intent } : {}) };
       pending.current = command;
       setPendingCommandId(command.commandId);
       try {

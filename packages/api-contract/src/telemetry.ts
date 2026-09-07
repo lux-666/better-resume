@@ -45,7 +45,15 @@ export type TelemetryTrace = Static<typeof TelemetryTraceSchema>;
 export type KnowledgeStatus = { status: "unconfigured" | "indexing" | "ready" | "failed"; count: number; model?: string; reason?: string };
 export type RunStatus = "running" | "succeeded" | "failed" | "timed_out" | "interrupted";
 export type Stage = "received" | "report" | "interview" | "saving" | "narrative";
+export const AgentStepSchema = Type.Object({
+  id: Type.String(), parentId: Type.Optional(Type.String()),
+  label: Type.String(), runningLabel: Type.String(),
+  status: Type.Union([statuses, Type.Literal("rejected"), Type.Literal("fallback")]),
+  elapsedMs: Type.Number({ minimum: 0 }), attempt: optionalNumber(),
+}, { additionalProperties: false });
+export type AgentStep = Static<typeof AgentStepSchema>;
 export const RunProgressSchema = Type.Object({
+  steps: Type.Optional(Type.Array(AgentStepSchema)),
   traceId: Type.String(), commandId: Type.Optional(Type.String()), operation: Type.String(),
   revision: Type.Integer({ minimum: 0 }), stateVersion: optionalNumber(),
   status: statuses, stage: Type.Union([Type.Literal("received"), Type.Literal("report"), Type.Literal("interview"), Type.Literal("saving"), Type.Literal("narrative")]),

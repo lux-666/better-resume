@@ -1,3 +1,6 @@
+import { TraceDetails } from "./trace-details.tsx";
+import { RunProgressPanel } from "./run-progress.tsx";
+import { projectRunProgress } from "../../../packages/api-contract/src/telemetry-summary.ts";
 import { useEffect, useState } from "react";
 import type { KnowledgeStatus, TelemetryTrace } from "../../../packages/api-contract/src/telemetry.ts";
 import { summarizeTelemetry, type Measurement } from "../../../packages/api-contract/src/telemetry-summary.ts";
@@ -5,7 +8,7 @@ import { request } from "./api.ts";
 import { projectLeads, type InterviewState } from "../../../packages/interview-core/src/index.ts";
 type Data = { traces: TelemetryTrace[]; summary: ReturnType<typeof summarizeTelemetry>; knowledge?: KnowledgeStatus };
 const measurement = (value: Measurement) => value.value === null ? "不可用" : `${value.value.toLocaleString()}${value.availability === "partial" ? "（部分）" : ""}`;
-export function TechnicalPanel({ state, version }: { state: InterviewState; version: number }) {
+export function TechnicalPanel({ state, version, rounds = false }: { state: InterviewState; version: number; rounds?: boolean }) {
   const sessionId = state.sessionId;
   const [data, setData] = useState<Data>();
   const [error, setError] = useState("");
@@ -18,13 +21,12 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
     sync(); const timer = setInterval(sync, 2_000);
     return () => { disposed = true; clearInterval(timer); };
   }, [sessionId, version]);
-  if (!data) return <p>{error || "正在读取运行统计…"}</p>;
+  if (!data) return rounds ? <RoundDetails state={state} traces={[]} error={error} /> : <p>{error || "正在读取运行统计…"}</p>;
   const trace = data.traces.find((item) => item.traceId === selected) ?? data.traces.at(-1);
   const summary = data.summary;
   const answerLatency = summary.answerLatency;
-  const total = trace?.durationMs ?? (trace ? Date.now() - Date.parse(trace.startedAt) : 1);
   const leads = projectLeads(state);
-  const decision = trace?.turnId ? state.traces.find((item) => item.turnId === trace.turnId) : state.traces.at(-1);
+  if (rounds) return <RoundDetails state={state} traces={data.traces} error={error} />;
   return <section className="technical-panel" aria-label="技术视图">
     <h3>Session 运行统计</h3>
     {data.knowledge && <p>当前知识索引：{{ unconfigured: "未配置，使用静态策略", indexing: "正在索引，暂用静态策略", ready: "可检索", failed: "索引失败，使用静态策略" }[data.knowledge.status]} · {data.knowledge.count} 张卡片{data.knowledge.model ? ` · ${data.knowledge.model}` : ""}</p>}
@@ -44,44 +46,42 @@ export function TechnicalPanel({ state, version }: { state: InterviewState; vers
     <select id="trace-picker" value={trace?.traceId ?? ""} onChange={(event) => setSelected(event.target.value)}>
       {data.traces.map((item, index) => <option key={item.traceId} value={item.traceId}>#{index + 1} {item.operation ?? "历史执行"} · {item.status ?? "未知"}</option>)}
     </select>
-    {trace && <><code>{trace.traceId}</code><p>状态：{trace.status ?? "历史记录"} · 总耗时 {(Math.max(total, 0) / 1000).toFixed(1)}s</p>
-      {decision && <details><summary>已提交 Decision · {decision.action}</summary>
-        <p>目标字段：{decision.targetFieldId ?? "—"} · 目标层级：{decision.targetDepth ?? "—"}</p>
-        <p>知识引用：{decision.knowledgeIds?.join("、") || "无"}</p>
-        <p>{decision.reason}</p><p>跟进线索：{leads.find((lead) => lead.id === decision.followsLeadId)?.text ?? "—"}</p>
-      </details>}
-      <div className="span-list">{trace.spans.map((span) => {
-        const start = Math.max(0, Date.parse(span.startedAt) - Date.parse(trace.startedAt));
-        const duration = span.durationMs ?? Math.max(0, Date.now() - Date.parse(span.startedAt));
-        return <details className={`span-row ${span.parentSpanId ? "child" : ""}`} key={span.spanId}>
-          <summary><span>{span.kind === "retrieval" ? "知识检索" : span.kind === "embedding" ? "查询向量化" : span.toolName ?? span.operation}{span.attempt ? ` · 尝试 ${span.attempt}` : ""}</span><small>{span.status ?? "历史"} · {(duration / 1000).toFixed(2)}s</small></summary>
-          <div className="span-track"><i style={{ marginLeft: `${Math.min(100, start / Math.max(1, total) * 100)}%`, width: `${Math.min(100, Math.max(.5, duration / Math.max(1, total) * 100))}%` }} /></div>
-          <p>{span.provider} {span.responseModel ?? span.model}</p>
-          {span.kind === "model" && <p>输入 {span.usage?.input ?? "不可用"} · 输出 {span.usage?.output ?? "不可用"} · 首响应 {span.firstResponseMs === undefined ? "不可用" : `${span.firstResponseMs}ms`} · 上下文 {span.context?.bytes ?? "—"} bytes</p>}
-          {span.kind === "tool" && <p>工具结果体积：{span.resultBytes ?? "不可用"} bytes</p>}
-          {span.summary && <p>摘要版本 {span.summary.version} · 来源 State {span.summary.sourceStateVersion} · {span.summary.chars}/1500 字符{span.summary.truncated ? " · 部分内容省略，可按需召回" : ""}</p>}
-          {span.fallback && <p>备用模型：{span.fallback.fromModel} → {span.fallback.toModel} · {span.fallback.reason} · {span.fallback.adopted ? "已采用" : "未采用"}</p>}
-          {span.recall && <section><p>回忆：{span.recall.query} · {span.recall.scope} · {span.recall.projectId ?? "跨项目"} · 来源 State {span.recall.sourceStateVersion}</p>
-            {span.recall.hits.map((hit) => <p key={`${hit.kind}:${hit.id}`}>{hit.kind} · {hit.id} · 相似度 {hit.score.toFixed(3)}</p>)}{!span.recall.hits.length && <p>无命中</p>}</section>}
-          {span.retrieval && <section aria-label="知识检索">
-            <p>查询：{span.retrieval.query}</p>
-            <p>过滤：{span.retrieval.fieldKind ?? "全部字段"} · 层级 {span.retrieval.targetDepth ?? "全部"} · 本地检索 {span.retrieval.localDurationMs?.toFixed(2) ?? "—"}ms</p>
-            {span.retrieval.fallback && <p>检索不可用，已回退静态追问策略。</p>}
-            {span.retrieval.hits.map((hit) => <details key={hit.id}><summary>{hit.id} · 相似度 {hit.score.toFixed(3)} · {span.retrieval!.referencedIds.includes(hit.id) ? "已引用" : "未引用"}</summary>
-              <p>{hit.sourcePath}</p><pre style={{ whiteSpace: "pre-wrap" }}>{hit.text}</pre>
-              {hit.source && <details><summary>上游素材与来源</summary>
-                <p>原题：{hit.source.originalQuestion ?? "未记录"}</p>
-                <p>原始考察点：{hit.source.sourceFocus ?? "未记录"}</p>
-                {hit.source.sourceUrl && /^https?:\/\//.test(hit.source.sourceUrl) && <a href={hit.source.sourceUrl} target="_blank" rel="noreferrer">{hit.source.sourceTitle ?? "原文"}</a>}
-                <p>来源版本：{hit.source.sourceCommit ?? "未记录"}</p>
-              </details>}
-            </details>)}
-            {!span.retrieval.hits.length && !span.retrieval.fallback && <p>没有匹配的知识卡片。</p>}
-          </section>}
-          {span.error && <p className="error">{span.error.message}</p>}
-          {span.outcome === "rejected" && <p>校验拒绝：{span.blockerCodes?.join("、") ?? "工具校验未通过"}</p>}
-        </details>;
-      })}</div></>}
+    {trace && <TraceDetails trace={trace} state={state} />}
+    {error && <p className="error">{error}</p>}
+  </section>;
+}
+
+
+function RoundDetails({ state, traces, error }: { state: InterviewState; traces: TelemetryTrace[]; error: string }) {
+  const groups = [{ id: "start", label: "面试准备", turn: undefined as InterviewState["turns"][number] | undefined, traces: [] as TelemetryTrace[] },
+    ...state.turns.map((turn) => ({ id: turn.id, label: `第 ${turn.index + 1} 轮${turn.kind === "discussion" ? " · 开放交流" : turn.kind === "supplement" ? " · 补充" : ""}`, turn, traces: [] as TelemetryTrace[] })),
+    { id: `pending:${state.turns.length}`, label: `第 ${state.turns.length + 1} 轮 · 处理中或待重试`, turn: undefined, traces: [] as TelemetryTrace[] }];
+  for (const trace of traces.filter((t) => t.operation !== "narrative" && t.status !== "running")) {
+    const committed = trace.commandId ? traces.findLast((t) => t.commandId === trace.commandId && t.status === "succeeded" && t.turnId) : undefined;
+    let group = groups.find((g) => g.turn && g.turn.id === (committed?.turnId ?? trace.turnId));
+    if (!group && (trace.operation === "start" || trace.operation === "create")) group = groups[0];
+    if (!group && trace.stateVersion !== undefined) group = groups.find((g) => g.turn && state.traces.findIndex((d) => d.turnId === g.turn!.id) >= trace.stateVersion!);
+    (group ?? groups.at(-1)!).traces.push(trace);
+  }
+  const visible = groups.filter((g) => g.turn || g.traces.length);
+  const latest = visible.at(-1)?.id;
+  const [expanded, setExpanded] = useState<string>();
+  useEffect(() => { setExpanded(latest); }, [latest]);
+  return <section className="round-history" aria-label="问答与调用详情">
+    <h3>问答记录</h3>
+    {visible.map((group) => <details className="round-details" key={group.id} open={expanded === group.id}>
+      <summary onClick={(event) => { event.preventDefault(); setExpanded(expanded === group.id ? undefined : group.id); }}>
+        <strong>{group.label}</strong><span>{group.traces.some((t) => t.status === "succeeded") ? "已处理" : "待处理"}{group.traces.length > 1 ? ` · ${group.traces.length} 次尝试` : ""}</span>
+      </summary>
+      {group.turn && <><p className="round-question">{group.turn.question}</p>
+        {state.clarifications?.filter((c) => c.question === group.turn!.question).map((c) => <p key={c.id}>候选人：{c.request}<br />问题说明：{c.response}</p>)}
+        <p className="answer-text">{group.turn.answer}</p>
+        {group.turn.interviewerResponse && <p className="interviewer-response">面试官：{group.turn.interviewerResponse}</p>}</>}
+      {group.traces.map((trace, index) => <section className="round-execution" key={trace.traceId}>
+        {group.traces.length > 1 && <h4>执行 {index + 1}</h4>}<RunProgressPanel key={trace.traceId} run={projectRunProgress(trace)} trace={trace} state={state} />
+      </section>)}
+      {!group.traces.length && <p className="field-hint">该轮没有保留调用记录。</p>}
+    </details>)}
     {error && <p className="error">{error}</p>}
   </section>;
 }

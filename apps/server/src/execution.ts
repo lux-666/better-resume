@@ -1,9 +1,10 @@
+import { respondToOpenFloor } from "../../../packages/pi-runtime/src/open-floor.ts";
 import type { SessionMemory } from "./session-memory.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 import { runModelStage } from "./model-stage.ts";
 import { clarifyWithAgent } from "../../../packages/pi-runtime/src/clarification.ts";
 import type { AnswerCommand, InterviewStateResponse, InterviewStepResponse } from "../../../packages/api-contract/src/index.ts";
-import { activateInterview, applyInterviewDecision, getDemoInterviewDecision, getInterviewProgress, HARD_MAX_TURNS, interviewTimeBudgetExhausted,
+import { activateInterview, applyInterviewDecision, getDemoInterviewDecision, getInterviewProgress, interviewTurnLimit, demoOpenFloorReply, addCandidateTopic, recordDiscussion,
   recordAnswer, recordClarification, getActiveInterviewContext, answerTurnCount, setStepExecution, type InterviewState, type InterviewStep, type TaskExecutionTrace } from "../../../packages/interview-core/src/index.ts";
 import { decideNextStepWithAgent, editReportWithAgent, type TelemetryCollector } from "../../../packages/pi-runtime/src/index.ts";
 import { HttpError } from "./http.ts";
@@ -45,10 +46,9 @@ export class InterviewExecution {
       durationMs: stages.reduce((n, span) => n + (span.durationMs ?? 0), 0), retryCount: result.attempts - 1 } };
   }
   private async next(state: InterviewState, collector: TelemetryCollector, signal: AbortSignal, turnId?: string) {
-    const expired = interviewTimeBudgetExhausted(state);
-    if (expired || answerTurnCount(state) >= HARD_MAX_TURNS || this.runtimes.interview.mode === "demo") {
+    if (answerTurnCount(state) >= interviewTurnLimit(state) || this.runtimes.interview.mode === "demo") {
       const span = collector.start("interview_agent", "agent", undefined, { attempt: 1 });
-      const decision = expired ? { action: "FINISH_INTERVIEW" as const, reason: "Interview time budget exhausted." } : answerTurnCount(state) >= HARD_MAX_TURNS ? { action: "FINISH_INTERVIEW" as const, reason: "Hard turn limit reached." } : getDemoInterviewDecision(state);
+      const decision = answerTurnCount(state) >= interviewTurnLimit(state) ? { action: "FINISH_INTERVIEW" as const, reason: "Configured turn limit reached." } : getDemoInterviewDecision(state);
       collector.finish(span);
       const step = this.stateChange(collector, "apply_decision", () => applyInterviewDecision(state, decision, turnId));
       return { step, trace: { source: "demo" as const, durationMs: span.durationMs ?? 0, retryCount: 0 } };
@@ -88,12 +88,35 @@ export class InterviewExecution {
   async answer(state: InterviewState, command: AnswerCommand): Promise<InterviewStepResponse> {
     const { owner, replay } = this.store.claim(state, command, () => {
       if (!state.currentQuestion || command.questionId !== questionId(state) || command.expectedStateVersion !== stateVersion(state)) throw new HttpError(409, "STATE_CONFLICT", "Question or state version is stale");
+      if (command.intent === "finish" && !state.openFloor) throw new HttpError(400, "INVALID_REQUEST", "结束选项仅用于开放交流环节");
+      if (state.openFloor && (command.intent === "clarify" || command.intent === "skip")) throw new HttpError(400, "INVALID_REQUEST", "开放交流中可直接补充、提问或结束");
       if (command.intent === "clarify" && (state.clarifications ?? []).some((item) => item.question === state.currentQuestion)) throw new HttpError(400, "INVALID_REQUEST", "每个问题可以说明一次；你可以作答或跳过。", false);
     });
     if (replay) return replay;
     let completed = false;
     try {
       return await this.run(state, "answer", async (collector, signal) => {
+        let answerProjectId: string | undefined;
+        if (state.openFloor) {
+          const runtime = this.runtimes.interview;
+          const resolved = command.intent === "finish" ? { value: { kind: "done" as const }, trace: { source: runtime.mode, durationMs: 0, retryCount: 0 } }
+            : runtime.mode === "llm" ? await this.modelCall(collector, signal, "interview_agent", runtime, (runtime, attempt, signal) => respondToOpenFloor({
+              model: runtime.model!, streamFn: runtime.streamFn!, state, request: command.answer, telemetry: collector, signal, attempt,
+            })) : { value: demoOpenFloorReply(command.answer), trace: { source: "demo" as const, durationMs: 0, retryCount: 0 } };
+          signal.throwIfAborted();
+          const reply = resolved.value;
+          if (reply.kind !== "topic") {
+            const turn = this.stateChange(collector, "record_discussion", () => recordDiscussion(state, command.answer, reply.kind === "question" ? reply.response : undefined));
+            collector.linkTurn(turn.id);
+            const step = this.stateChange(collector, "apply_decision", () => applyInterviewDecision(state,
+              { action: reply.kind === "done" ? "CANDIDATE_FINISH" : "FINISH_INTERVIEW", reason: reply.kind === "done" ? "Candidate chose to finish." : "Candidate question answered; keep discussion open." }, turn.id));
+            setStepExecution(state, { ...this.runtimes.info, question: resolved.trace });
+            const response = this.stepResponse(step, command.commandId);
+            this.stateChange(collector, "persist_answer_command_and_state", () => this.store.complete(state, command, owner, response));
+            completed = true; return response;
+          }
+          answerProjectId = this.stateChange(collector, "add_candidate_topic", () => addCandidateTopic(state, command.answer, reply.title!));
+        }
         let edit: Awaited<ReturnType<typeof editReportWithAgent>> | undefined;
         let evidenceTrace: TaskExecutionTrace;
         const runtime = this.runtimes.report; const recallBudget = { remaining: 2 };
@@ -108,7 +131,7 @@ export class InterviewExecution {
           evidenceTrace = { source: runtime.mode, durationMs: 0, retryCount: 0 };
         } else if (runtime.mode === "llm") {
           const result = await this.modelCall(collector, signal, "report_agent", runtime, (runtime, attempt, signal) => editReportWithAgent({
-            model: runtime.model!, streamFn: runtime.streamFn!, state, answer: command.answer, telemetry: collector, signal, attempt, memory: this.memory, recallBudget,
+            model: runtime.model!, streamFn: runtime.streamFn!, state, projectId: answerProjectId, answer: command.answer, telemetry: collector, signal, attempt, memory: this.memory, recallBudget,
           }));
           edit = result.value; evidenceTrace = result.trace;
         } else {
@@ -116,7 +139,7 @@ export class InterviewExecution {
           evidenceTrace = { source: "demo", durationMs: span.durationMs ?? 0, retryCount: 0 };
         }
         signal.throwIfAborted();
-        if (edit?.answerDisposition === "question_back") {
+        if (edit?.answerDisposition === "question_back" && !answerProjectId) {
           if ((state.clarifications ?? []).some((item) => item.question === state.currentQuestion)) {
             const rejection = new HttpError(400, "INVALID_REQUEST", "这个问题已经说明过，请作答或选择跳过。", false);
             this.store.reject(state.sessionId, command.commandId, owner, rejection);
@@ -133,7 +156,7 @@ export class InterviewExecution {
           completed = true; return response;
         }
         for (const claim of edit?.resumeClaims ?? []) if (!state.candidate.claims.some((c) => c.id === claim.id)) state.candidate.claims.push(claim);
-        const record = this.stateChange(collector, "apply_report_edit", () => recordAnswer(state, command.answer, edit?.evidence, edit?.answerDisposition, edit?.leads));
+        const record = this.stateChange(collector, "apply_report_edit", () => recordAnswer(state, command.answer, edit?.evidence, edit?.answerDisposition, edit?.leads, undefined, answerProjectId));
         collector.linkTurn(record.turn.id);
         const { step, trace } = await this.next(state, collector, signal, record.turn.id);
         signal.throwIfAborted();

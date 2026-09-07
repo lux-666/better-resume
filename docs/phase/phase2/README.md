@@ -25,13 +25,13 @@
 
 - 候选人普通填写只包含姓名、技能和 `Project[]`；至少一个项目，每个项目只要求名称和一段项目经历；
 - JD 整体可选；一旦填写，岗位、岗位介绍、职责和要求四块必须完整；
-- 文本文件、Markdown 和文本型 PDF 在浏览器内一次性解析并回填表单；
+- 文本文件、Markdown、文本型 PDF 和 JPG/JPEG/PNG/WebP 图片在浏览器内提取/ OCR；JD 提取全文通过现有文本 LLM 一次填写四项，由用户校对，重新上传替换四项；
 - 用户确认或修正后，只提交结构化 `InterviewIntake`；
-- Server 不接收、不保存上传文件、文件名或 Resume/JD 全文；
+- Server 不接收原文件或文件名；JD 导入只临时处理提取全文，不保存；简历全文仅在用户勾选后随 Session 上传用于索引；
 - 每段项目经历生成一条初始为 `unverified` 的 `candidate_input` Claim，不能直接成为 Evidence；
 - Session 创建不调用额外 LLM 拆分项目角色、技术或成果。
 
-上传解析只是便捷预填，不是权威 Parser。扫描 PDF、OCR 和复杂版式识别不在当前范围。
+上传解析只是便捷预填，不是权威 Parser。复杂版式识别不在当前范围。
 
 ## Task 2.2：Session Role 与 Agent 上下文解耦
 
@@ -149,4 +149,4 @@ JSON 只包含 Candidate Report；Markdown 是同一份报告的人类可读渲�
 
 ## 明确不做
 
-当前不建设系统自评分、候选人总分、OCR、复杂 PDF 模板、LLM-as-judge 或第二套严格 Field 提取模式。只有真实 Gate 证明必要后再增加复杂度。
+当前不建设系统自评分、候选人总分、复杂 PDF 模板、LLM-as-judge 或第二套严格 Field 提取模式。只有真实 Gate 证明必要后再增加复杂度。

@@ -16,7 +16,8 @@ function fixture() {
     const field = state.report.fields[n === 12 ? 4 : 0];
     applyInterviewDecision(state, { action: "ASK_CANDIDATE", targetFieldId: field.id, targetDepth: 3, question: `第${n}次实施时你如何选择？`, reason: "check" });
     const answer = n === 1 ? "第一个项目的缓存更新方案完全由我独立设计" : `我核对了第${n}次实验的记录`;
-    recordAnswer(state, answer, [{ statement: answer, sourceQuote: answer, reportFieldIds: [field.id], claimIds: [], competencyId: field.competencyId, polarity: "support", strength: .9, specificity: .9, evaluatorConfidence: .9, depthLevel: 3 }]);
+    const fields = n === 11 || n === 12 ? state.report.fields.filter((item) => item.projectId === field.projectId) : [field];
+    recordAnswer(state, answer, fields.map((item) => ({ statement: answer, sourceQuote: answer, reportFieldIds: [item.id], claimIds: [], competencyId: item.competencyId, polarity: "support", strength: .9, specificity: .9, evaluatorConfidence: .9, depthLevel: 3 })));
   }
   const field = state.report.fields[8]; applyInterviewDecision(state, { action: "ASK_CANDIDATE", targetFieldId: field.id, targetDepth: 3, question: "第一个项目的方案实际上由谁设计？", reason: "cross project" });
   return { state, field };
