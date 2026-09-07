@@ -17,7 +17,7 @@ import {
   type InterviewDecision,
   type InterviewState,
 } from "../../interview-core/src/index.ts";
-import { TelemetryCollector, type TelemetryTrace } from "./telemetry.ts";
+import { TelemetryCollector } from "./telemetry.ts";
 import { createObservedAgent as createAgent, runObservedAgent } from "./agent-runner.ts";
 
 export { TelemetryCollector } from "./telemetry.ts";

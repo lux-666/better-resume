@@ -20,7 +20,7 @@ export const AssessmentSchema = Type.Object({
   methodology: Type.Array(Type.String()),
 }, { additionalProperties: false });
 export type CompetencyAssessment = Static<typeof AssessmentSchema>;
-export const depthLabels = ["未验证", "说明参与", "重建实施细节", "解释选择依据", "分析取舍与边界", "迁移到新情景"];
+const depthLabels = ["未验证", "说明参与", "重建实施细节", "解释选择依据", "分析取舍与边界", "迁移到新情景"];
 
 export function buildAssessment(state: InterviewState, matrix: RequirementMatrix, valid: boolean): CompetencyAssessment {
   const fields = state.report.fields;

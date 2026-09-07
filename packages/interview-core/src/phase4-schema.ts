@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 const id = () => Type.String({ minLength: 1, maxLength: 100 });
-export const SummarySchema = Type.Object({
+const SummarySchema = Type.Object({
   version: Type.Integer({ minimum: 0 }), sourceStateVersion: Type.Integer({ minimum: 0 }), charBudget: Type.Literal(1500), truncated: Type.Boolean(),
   candidateStyle: Type.String(), perProject: Type.Array(Type.Object({ projectId: id(), coveredDepth: Type.Record(Type.String(), Type.Number()),
     keyStatements: Type.Array(Type.Object({ text: Type.String(), evidenceId: id() })), openLeads: Type.Array(id()), contradictions: Type.Array(id()),

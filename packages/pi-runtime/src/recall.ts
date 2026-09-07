@@ -3,7 +3,7 @@ import { Check } from "typebox/value";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { InterviewState } from "../../interview-core/src/types.ts";
 import type { TelemetryCollector } from "./telemetry.ts";
-export const RecallQuerySchema = Type.Object({ query: Type.String({ minLength: 1, maxLength: 500 }),
+const RecallQuerySchema = Type.Object({ query: Type.String({ minLength: 1, maxLength: 500 }),
   scope: Type.Union([Type.Literal("turns"), Type.Literal("evidence"), Type.Literal("both"), Type.Literal("resume")]),
   projectId: Type.Optional(Type.String()), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
 }, { additionalProperties: false });

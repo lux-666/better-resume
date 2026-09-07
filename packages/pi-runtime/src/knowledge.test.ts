@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { activateInterview, applyInterviewDecision, createFixtureCandidate, createInterviewState } from "../../interview-core/src/index.ts";
 import { buildInterviewAgentView, buildReportAgentView, decideNextStepWithAgent, TelemetryCollector, validateReportEdit } from "./index.ts";
 import type { ProbeKnowledge } from "./knowledge.ts";
+import { runtime } from "./test-helpers.ts";
 const ask = { targetFieldId: "project_enterprise_rag:mechanism", reason: "核验融合取舍", question: "你当时为什么选择这种融合方式？" };
-function runtime(calls: Array<[string, object]>) {
-  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
-  faux.setResponses(calls.map(([name, value]) => fauxAssistantMessage(fauxToolCall(name, value), { stopReason: "toolUse" })));
-  return { model: faux.getModel(), streamFn: models.streamSimple.bind(models) };
-}
 function state() { const state = createInterviewState("session", "role", createFixtureCandidate("Candidate")); activateInterview(state); return state; }
 test("Agent explicitly retrieves, references only hits and persists provenance without candidate evidence", async () => {
   const current = state(); const telemetry = new TelemetryCollector(); let queries = 0;

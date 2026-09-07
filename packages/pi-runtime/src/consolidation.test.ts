@@ -4,6 +4,20 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "
 import { activateInterview, createFixtureCandidate, createInterviewState } from "../../interview-core/src/index.ts";
 import { buildSummary } from "../../interview-core/src/memory.ts";
 import { decideNextStepWithAgent, ModelProviderError, TelemetryCollector, withOneProviderRetry } from "./index.ts";
+import { runtime } from "./test-helpers.ts";
+test("scripted test runtimes preserve response order and isolate concurrent callers", async () => {
+  const first = runtime([["first", { source: "a" }], ["second", { source: "a" }]]);
+  const other = runtime([["independent", { source: "b" }]]);
+  const invoke = async (value: ReturnType<typeof runtime>) => {
+    const result = await value.streamFn(value.model, { messages: [] }).result();
+    assert.equal(result.stopReason, "toolUse");
+    return result.content.filter((item) => item.type === "toolCall").map(({ name, arguments: args }) => [name, args]);
+  };
+  assert.deepEqual(await Promise.all([invoke(first), invoke(other)]), [
+    [["first", { source: "a" }]], [["independent", { source: "b" }]],
+  ]);
+  assert.deepEqual(await invoke(first), [["second", { source: "a" }]]);
+});
 test("the summary recorded in telemetry is the projection sent to the model, never the legacy cache", async () => {
   const state = createInterviewState("summary", "role", createFixtureCandidate()); activateInterview(state);
   const legacy = { ...state, memory: { summary: { version: 999, text: "FORGED_CACHE" } } };

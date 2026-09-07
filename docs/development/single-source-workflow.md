@@ -10,11 +10,12 @@
 | 面试记忆摘要 | `buildSummary` | 进入 Interview Agent 前从当前 State 生成一次，同一对象用于输入与 summary_update Telemetry。摘要不写入 State，旧快照的 memory 缓存在加载时丢弃；Turn/Evidence 不变。 |
 | Provider 重试 | `withOneProviderRetry` | 正常 Agent 与评测共用“只对 Provider 错误重试一次”；中止或业务校验失败不重试同一主模型。 |
 | 备用模型 | `runModelStage` | 组合上述主模型重试与一次备用尝试；主阶段超时和整个命令中止是不同期限，后者不能再启用备用。所有模型只产出提案，提交仍由执行事务负责。 |
-| 面试时长到期 | `interviewTimeBudgetExhausted` | Core 完成校验、Server 结束决策、Agent 输入共用；等于预算时即到期。15 轮上限独立保留。 |
+| 面试时长提醒 | `interviewTimeBudgetExhausted` | 到期提示与 Agent 输入共用；等于预算时即到期，不强制结束。轮次上限独立生效。 |
 | 会话响应 | `InterviewStateResponseSchema` | Step Schema 扩展相同公共属性，两种 TypeScript 类型都从各自 Schema 推导，避免新增 metadata/pending 字段漏改另一轨。 |
 | 岗位结论枚举 | `RequirementStatusSchema` | 矩阵与叙述层共用同一枚举；叙述内容另有引用范围和结论不得提升的业务校验。 |
 | 页面会话切换 | `useInterviewSession` | 打开、恢复、清空和最近会话 localStorage 都由 hook 维护；表单只清理自身输入。 |
 | 回答延迟 | `summarizeTelemetry().answerLatency` | API 与技术视图使用同一聚合结果；全部操作延迟与回答延迟是不同样本集合。 |
+| 测试工具调用序列 | `packages/pi-runtime/src/test-helpers.ts` 的 `runtime` | knowledge/recall 测试共用响应序列到 faux provider 的映射；每次调用创建独立 provider 和 models。工具名、参数与顺序原样保留，各自的状态、检索数据、预算和断言仍由测试构造。 |
 
 ## 必要分层
 
@@ -43,4 +44,8 @@
 
 `npm run check:duplication` 使用固定版本 jscpd，对 apps/packages 的生产 TypeScript/TSX 检测至少 70 token 的克隆，阈值为 0，已纳入 `npm test`。测试夹具允许各自构造独立场景，不为消除文本相似而抽象测试。检测范围不是语义证明；共享不变量另由 consolidation 合约测试保护。
 
-`knip` 用于复核未使用导出。工作区包虽通过相对路径导入，仍保留依赖声明；不能把扫描器的这类误报当成死依赖删除。
+`packages/pi-runtime/src/index.test.ts` 中的三组相似片段保留：正常编辑与遥测验证、否认主张修复与跨项目字段修复、正常提问与项目饱和后的切换。它们分别验证独立契约；响应重试次数、状态准备及断言应独立调整，不合并测试场景。
+
+`npm test` 先执行 `typecheck`，通过 TypeScript 的 `noUnusedLocals` 和 `noUnusedParameters` 拒绝未使用导入、局部变量及参数。共享测试 runtime 的合约测试验证响应顺序与并发实例隔离。
+
+`npx --yes knip@6.32.2 --include files,exports,duplicates,types --no-progress` 用于复核未使用导出。模块内部仍被引用的 Schema 和类型只收回 export，不删除定义。包入口保留的 core 类型、报告构建接口及 Agent/API Schema 是公共契约；`--include-entry-exports` 的候选需要先检查该边界，不能按仓库内调用数直接裁掉。工作区包虽通过相对路径导入，仍保留依赖声明；不能把扫描器的这类误报当成死依赖删除。

@@ -23,7 +23,7 @@ interface CandidateReportEvidenceReference {
   evaluatorConfidence: number;
 }
 
-export interface CandidateReportFieldOutput {
+interface CandidateReportFieldOutput {
   detail: ReturnType<typeof fieldConclusion>;
   fieldId: string;
   name: string;
@@ -34,7 +34,7 @@ export interface CandidateReportFieldOutput {
   recommendation?: string;
 }
 
-export interface CandidateReportFinding {
+interface CandidateReportFinding {
   projectId: string;
   projectName: string;
   fieldId: string;
@@ -44,7 +44,7 @@ export interface CandidateReportFinding {
   evidenceIds: string[];
 }
 
-export interface CandidateReportGap {
+interface CandidateReportGap {
   projectId: string;
   projectName: string;
   fieldId: string;

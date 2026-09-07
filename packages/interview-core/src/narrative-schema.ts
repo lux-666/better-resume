@@ -1,6 +1,6 @@
 import { RequirementStatusSchema } from "./phase4-schema.ts";
 import { Type, type Static } from "typebox";
-export const NarrativeSentenceSchema = Type.Object({ text: Type.String({ minLength: 1, maxLength: 800 }), evidenceIds: Type.Array(Type.String(), { maxItems: 20, uniqueItems: true }) }, { additionalProperties: false });
+const NarrativeSentenceSchema = Type.Object({ text: Type.String({ minLength: 1, maxLength: 800 }), evidenceIds: Type.Array(Type.String(), { maxItems: 20, uniqueItems: true }) }, { additionalProperties: false });
 const paragraph = () => Type.Array(NarrativeSentenceSchema, { minItems: 1, maxItems: 4 });
 export const ReportNarrativeSchema = Type.Object({
   schemaVersion: Type.Literal("report-narrative-v0.1"), overall: paragraph(),

@@ -2,21 +2,18 @@ import { HistoryPanel } from "./history-panel.tsx";
 import { DemoProfiles } from "./demo-profiles.tsx";
 import { ReportPanel } from "./report-panel.tsx";
 import { SupplementForm } from "./supplement-form.tsx";
-import { StrictMode, useEffect, useRef, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type {
-  AnswerCommand,
-  ApiError,
   CreateInterviewBody,
   InterviewReportResponse,
   InterviewStateResponse,
-  InterviewStepResponse,
   RuntimeInfo,
 } from "@better-resume/api-contract";
 import { extractPdfPageText, parseResume } from "./intake-parser.ts";
 import "./style.css";
 
-import { ApiRequestError, post, request } from "./api.ts";
+import { post, request } from "./api.ts";
 import { useInterviewSession } from "./use-interview-session.ts";
 import { RunProgressPanel } from "./run-progress.tsx";
 import { InterviewTimeReminder } from "./interview-time-reminder.tsx";

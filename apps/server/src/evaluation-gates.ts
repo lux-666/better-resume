@@ -3,7 +3,7 @@ import { modelProfiles, type ModelProfileName } from "../../../packages/intervie
 import type { ReportEdit } from "../../../packages/pi-runtime/src/index.ts";
 import type { AnswerDisposition, EvidenceProposal } from "../../../packages/interview-core/src/index.ts";
 
-export type GateSeverity = "critical" | "major";
+type GateSeverity = "critical" | "major";
 
 export interface EvaluationTurn {
   index: number;

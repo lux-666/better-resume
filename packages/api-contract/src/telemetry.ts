@@ -7,7 +7,7 @@ export const KnowledgeSourceSchema = Type.Object({
   originalQuestion: Type.Optional(Type.String()), sourceFocus: Type.Optional(Type.String()), sourceExplanation: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 export type KnowledgeSource = Static<typeof KnowledgeSourceSchema>;
-export const TelemetrySpanSchema = Type.Object({
+const TelemetrySpanSchema = Type.Object({
   traceId: Type.String(), spanId: Type.String(), parentSpanId: Type.Optional(Type.String()),
   sessionId: Type.Optional(Type.String()), commandId: Type.Optional(Type.String()), turnId: Type.Optional(Type.String()),
   kind: Type.Union([Type.Literal("agent"), Type.Literal("model"), Type.Literal("tool"), Type.Literal("state"), Type.Literal("retrieval"), Type.Literal("embedding"), Type.Literal("recall")]),
@@ -45,7 +45,7 @@ export type TelemetryTrace = Static<typeof TelemetryTraceSchema>;
 export type KnowledgeStatus = { status: "unconfigured" | "indexing" | "ready" | "failed"; count: number; model?: string; reason?: string };
 export type RunStatus = "running" | "succeeded" | "failed" | "timed_out" | "interrupted";
 export type Stage = "received" | "report" | "interview" | "saving" | "narrative";
-export const AgentStepSchema = Type.Object({
+const AgentStepSchema = Type.Object({
   id: Type.String(), parentId: Type.Optional(Type.String()),
   label: Type.String(), runningLabel: Type.String(),
   status: Type.Union([statuses, Type.Literal("rejected"), Type.Literal("fallback")]),

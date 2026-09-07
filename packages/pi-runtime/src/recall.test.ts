@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { activateInterview, applyInterviewDecision, buildCandidateFromIntake, buildInterviewRole, buildInterviewReportBundle, createInterviewState, groundedAnswerClaims, normalizeInterviewIntake, recordAnswer } from "../../interview-core/src/index.ts";
 import { editReportWithAgent, TelemetryCollector } from "./index.ts";
 import { recallTool, type SessionRecall } from "./recall.ts";
-function runtime(calls: Array<[string, object]>) {
-  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
-  faux.setResponses(calls.map(([name, value]) => fauxAssistantMessage(fauxToolCall(name, value), { stopReason: "toolUse" })));
-  return { model: faux.getModel(), streamFn: models.streamSimple.bind(models) };
-}
+import { runtime } from "./test-helpers.ts";
 function fixture() {
   const intake = normalizeInterviewIntake({ candidate: { name: "Test", skills: [], projects: ["A", "B", "C"].map((name) => ({ name, description: "参与系统设计" })) } });
   const role = buildInterviewRole({}); const state = createInterviewState("long", role, buildCandidateFromIntake(intake, role), intake); state.phaseVersion = 3; activateInterview(state);
