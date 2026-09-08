@@ -11,7 +11,7 @@ const runtimes: RuntimeSet = { report: { mode: "demo" }, interview: { mode: "dem
 test("HTTP exposes ready/unconfigured retrieval, validates filters and uses the persisted corpus", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "knowledge-api-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, "one.md"), '---\nid: "one"\nkind: "competency"\ndomains: ["rag"]\nfieldKinds: ["mechanism"]\ndepthLevels: [3]\n---\nRAG');
+  writeFileSync(join(root, "cards.json"), JSON.stringify([{ id: "one", kind: "competency", domains: ["rag"], fieldKinds: ["mechanism"], depthLevels: [3], text: "RAG" }]));
   let embeds = 0;
   for (const configured of [true, false]) {
     const app = createApplication({ databasePath: join(root, "test.db"), knowledgeRoot: root, runtimes,

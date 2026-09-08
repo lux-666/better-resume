@@ -57,3 +57,10 @@ test("routing model roles come from environment configuration", () => {
     LLM_WEAK_MODEL: "same", LLM_STRONG_MODEL: "same",
   }), /must be different/);
 });
+
+test("three model roles use weak for report, strong for interview, and an independent mini setting", () => {
+  const env = { LLM_PROVIDER: "openai_compatible", LLM_BASE_URL: "https://example.com/v1", LLM_API_KEY: "test", LLM_WEAK_MODEL: "low", LLM_STRONG_MODEL: "high", LLM_MINI_MODEL: "low" };
+  assert.deepEqual(resolveAgentModelIds(env), { reportModelId: "low", interviewModelId: "high" });
+  assert.equal(createModelRuntime(env).modelId, "low");
+  assert.equal(createModelRuntime(env, env.LLM_MINI_MODEL).modelId, "low");
+});

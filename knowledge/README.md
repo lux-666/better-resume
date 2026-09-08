@@ -1,55 +1,56 @@
-# 面试官知识卡片（20 题试用）
+# 面试官知识库
 
-首批来自 [xyma2003/interview-bagu 的 AI Agent 题库](https://github.com/xyma2003/interview-bagu/blob/06a0473e5520eba7dcb75d6f417b9f715582fca6/ai-agent/ai_agent.md)，固定提交 `06a0473e5520eba7dcb75d6f417b9f715582fca6`，范围为 Q1–Q20。
+338 张卡片统一存放在 [cards.json](cards.json)：AI/Agent 106、前端 68、后端 64、算法 100。一个 JSON 数组，每条记录直接保存 ID、原题、考察点、正文与来源，不分批次或精修目录。卡片是公共追问素材，不是候选人能力证据；Report Agent 仍只依据候选人原话。
 
-每张卡围绕一个核验焦点，正文约 100–300 字，包含适用场景、核验重点、可追问方向、浅层信号和避免预设。正文明确标注“本项目整理（非上游原文）”。上游原题、考察点与来源完整保留在 frontmatter，作为原始素材，不充当标准答案，也不能证明候选人拥有某项能力。卡片文件随 GitHub 项目分发，运行时无需抓取上游。
+来源：[xyma2003/interview-bagu](https://github.com/xyma2003/interview-bagu)，许可证见 [LICENSE](LICENSE)。仓库只保留卡片和许可证，不复制上游仓库、手册、学习指南或版本归档。原题、考察点与来源链接保留在卡片中，不做来源哈希或版本校验。
 
-## 卡片约定
+向量无法还原题干或正文。`cards.json` 是可编辑、可重建的唯一知识源；SQLite 的 `knowledge_chunks` 同时保存文本、元数据和 embedding，作为运行索引。无需逐题 Markdown，也不维护 MD/JSON 双份文件。
 
-一题一 Markdown，首部是逐行 JSON 值形式的 frontmatter：
-
-```markdown
----
-id: "stable-card-id"
-kind: "competency"
-domains: ["ai_engineering", "rag"]
-fieldKinds: ["mechanism", "ownership", "measurement"]
-depthLevels: [1, 2, 3, 4, 5]
-sourceUrl: "https://example.com/source"
-sourceCommit: "pinned-commit"
-sourceTitle: "上游题目编号或标题"
-originalQuestion: "原题完整题干"
-sourceFocus: "原始考察点"
----
-
-# 一个具体核验焦点
-
-本项目整理（非上游原文）
-
-适用场景：候选人刚提到了什么。
-核验重点：区分两个容易混淆的机制或决策。
-可追问方向：先核验一个实际细节，再按回答选择下一步。
-浅层信号：哪种笼统回答值得继续核验。
-避免预设：不假定候选人做过哪些事或某方案必然更优。
-```
-
-`id` 在修改正文或移动文件时保持稳定。`fieldKinds` 对应现有字段后缀：`ownership`、`mechanism`、`measurement`、`failure`。`depthLevels` 表示可用于提问的深度，而非题目已经证明候选人达到了该深度。普通 README 没有 frontmatter，不参与索引。
-
-## 索引内容与来源边界
-
-embedding 输入依次组合 `domains`、`fieldKinds`、`originalQuestion`、`sourceFocus` 和完整核验正文（含标题）。`id`、来源 URL/commit、路径、hash、上游评价性解析不参与向量生成。卡片仍是一张一个 chunk，返回的 `text` 是精炼核验正文，`source` 另存并返回原题、考察点和版本；技术视图中可分别展开。
-
-SQLite 的 `content_hash` 记录完整文件变化；`embedding_hash` 记录实际语义输入变化。只更改 URL、commit 或深度过滤元数据时更新数据库而不重新 embedding；更改正文、原题、考察点、领域或字段类型时重建该卡向量。删除卡片同步清理，更换 embedding URL/模型重建全量向量。旧索引启动时自动补列，首次升级按新输入生成向量，已有 Session 不受影响。
-
-## 先少量试用，再按漏问补卡
+## 导入和维护
 
 ```bash
+npm run knowledge:import -- /path/to/interview-bagu-main
+```
+
+导入按真实 Q 标题拆分，忽略代码块内标题，以方向和题号去重，只补充缺失卡片。导入期间只允许一个写入进程；正常退出会清理 `.import.lock`，进程被强杀后确认没有导入在运行再删除残留锁。已有卡片不会被覆盖，所有卡片都可直接编辑，不区分精修和生成目录。原文变化不阻止新增题目的导入；删除知识卡片直接删除数组中的记录，索引下次启动同步清理。
+
+每卡一个 chunk。记录字段为：`id`、`kind`、`domains`、`fieldKinds`、`depthLevels`，`text` 为正文，加上来源字段。算法题保留任务描述，适用机制、度量和失败核验；不默认算法练习代表项目所有权。`depthLevels` 只是提问适用深度。
+
+卡片正文说明适用场景、核验重点、可追问方向、浅层信号和避免预设。部分正文由规则生成，仍需在实际使用中精修；上游考察点没有经过独立事实审校，不能当作自动评分标准。没有考察点的源题保持缺失，不补造。
+
+## 自适应检索
+
+1. 按字段和深度过滤，执行向量召回与 BM25，中英文分词后用 RRF 融合取前 20 个候选。
+2. 高置信度跳过 mini；中等置信度重排这 20 个候选；低置信度扩到 50 个再重排。当前采用扩召回，不额外调用模型改写查询。
+3. 按相关性阈值过滤、分差截断，再用 MMR 选择不冗余的上下文，通常返回 2–8 张。确实不足时可返回 0 或 1 张，不用无关卡片凑数。
+
+高置信度跳过 mini 时，只保留距最高本地相关性分不超过 0.12 的候选，避免将弱相关尾部一并返回。高置信度要求两路首位一致、向量分至少 0.6、查询词加权覆盖率至少 0.45，且向量领先分差至少 0.06。其余查询中，最高向量分至少 0.4 或词覆盖率至少 0.35 属中等置信度，其他为低置信度。这些是初始启发式阈值，不是概率；更换 embedding 或语料后需要重新评测。
+
+mini 只接收原题和考察点，避免重复传输追问模板；用 0–1 相关性分数评价每个候选，阈值为 0.45。未调用 mini 或调用失败时，用 `0.75 × min(1, 非负向量分 / 0.6) + 0.25 × 查询词覆盖率` 作本地相关性分。先去掉近重复卡片，再从第 3 张不同卡片开始按 0.2 分差截断；MMR 的相关性/冗余权重为 0.8/0.2，同时排除向量和词集合都近乎相同的重复卡。模型相关性分与本地分有不同含义，不能当作已校准概率比较。
+
+mini 复用现有 LLM provider，通过一次模型请求返回全部候选的 JSON 分数，不需要 `/rerank` endpoint：
+
+```dotenv
+LLM_WEAK_MODEL=your-low-model
+LLM_STRONG_MODEL=your-high-model
+LLM_MINI_MODEL=your-low-model
+LLM_RERANK_TIMEOUT_SECONDS=15
+```
+
+Report 默认使用 low，Interview 默认使用 high；mini 是可独立替换的配置，初始可与 low 相同。mini 留空则只用本地混合检索和动态上下文选择。重排超时、JSON 无效或索引重复时保留本地混合结果；整轮取消继续向上传播。
+
+技术视图显示置信度、是否扩召回、候选数、跳过原因、实际重排状态和返回数量。`score` 始终是向量相似度，`rerankScore` 是 mini 相关性分。embedding 输入组合领域、字段、原题、考察点和正文，URL 等出处信息不参与。语义变化才重新生成向量；索引完整构建后原子发布，历史面试记录不变。
+
+## 验证
+
+```bash
+npm test
+npm run eval:knowledge -- --full --compare
+npm run eval:knowledge -- --full --no-rerank
 npm run eval:knowledge -- --smoke
 npm run eval:knowledge:questions -- --smoke
 ```
 
-第一条仅检查 RAG、幂等恢复、提示缓存三条查询；第二条仅生成幂等场景的一组有/无检索问题对。分别输出到 `data/evaluations/phase4-knowledge-smoke.json` 和 `phase4-knowledge-questions-smoke.json`。冒烟检查记录命中与问题供人查看，不以小样本分数作为质量 Gate；网络/索引/模型错误仍会报错。
+`--full` 使用覆盖四方向的 12 条合成查询。`--compare` 对同一批查询和候选池比较自适应与每次重排，记录命中率、最终召回率、重排调用/失败数、返回数量、context 字符数和耗时。结果写入忽略提交的 `data/evaluations/knowledge-full-comparison.json`。评测可强制重排，但面试工具始终使用自适应模式。
 
-当前优先经历几轮实际对话：看是否命中正确焦点、追问有没有贴合刚说的细节、是否带入候选人未说过的假设，然后修改相关卡片。浅层信号只能触发核验，不能直接触发负面结论。不先扩大题库或做完 100 条标注。
-
-去掉 `--smoke` 仍可运行原有 20 条查询和 3 组问题对，留作需要时的复查工具。9 月 5 日的分数只对应改写前卡片，不代表当前卡片质量，也不应据此宣布追问能力提升。
+不带参数仍为原有 20 条查询，`--smoke` 只跑其中 3 条。少量合成样本不能证明真实面试质量不下降；需扩大独立样本，特别检查跳过 mini 的查询是否漏检。重排失败在运行时允许回退，但评测命令会以非零退出码提示失败。

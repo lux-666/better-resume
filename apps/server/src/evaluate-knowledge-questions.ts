@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { configuredEmbedding } from "./embedding.ts";
+import { configuredReranker } from "./rerank.ts";
 import { configuredRuntimes } from "./configured-runtimes.ts";
 import { KnowledgeStore } from "./knowledge-store.ts";
 import { buildCandidateFromIntake, buildInterviewRole, createInterviewState, startInterview, recordAnswer, applyInterviewDecision } from "../../../packages/interview-core/src/index.ts";
@@ -19,7 +20,7 @@ const results: unknown[] = [];
 try {
   const runtime = configuredRuntimes().interview;
   if (runtime.mode !== "llm") throw new Error("Configure the interview model before running question comparison");
-  const knowledge = new KnowledgeStore(database, configuredEmbedding());
+  const knowledge = new KnowledgeStore(database, configuredEmbedding(), configuredReranker());
   await knowledge.index(fileURLToPath(new URL("../../../knowledge", import.meta.url)));
   if (knowledge.health().status !== "ready") throw new Error("Knowledge must be ready for the comparison");
   for (const sample of cases) {

@@ -27,14 +27,15 @@ export function TraceDetails({ trace, state }: { trace: TelemetryTrace; state: I
           {span.retrieval && <section aria-label="知识检索">
             <p>查询：{span.retrieval.query}</p>
             <p>过滤：{span.retrieval.fieldKind ?? "全部字段"} · 层级 {span.retrieval.targetDepth ?? "全部"} · 本地检索 {span.retrieval.localDurationMs?.toFixed(2) ?? "—"}ms</p>
+            {span.retrieval.cascade && <p>混合召回：{span.retrieval.cascade.confidence} · {span.retrieval.cascade.candidateCount} 个候选{span.retrieval.cascade.expanded ? "（已扩召回）" : ""} · 返回 {span.retrieval.cascade.returnedCount} 条{span.retrieval.cascade.rerankSkipped === "high_confidence" ? " · 高置信度，跳过重排" : span.retrieval.cascade.rerankSkipped === "unconfigured" ? " · mini 未配置" : ""}</p>}
+            {span.retrieval.rerank && <p>重排：{span.retrieval.rerank.model} · {span.retrieval.rerank.status === "succeeded" ? "已重排" : span.retrieval.rerank.reason === "timeout" ? "超时，使用混合召回结果" : "失败，使用混合召回结果"} · {span.retrieval.rerank.candidateCount} 个候选 · {span.retrieval.rerank.durationMs.toFixed(0)}ms</p>}
             {span.retrieval.fallback && <p>检索不可用，已回退静态追问策略。</p>}
-            {span.retrieval.hits.map((hit) => <details key={hit.id}><summary>{hit.id} · 相似度 {hit.score.toFixed(3)} · {span.retrieval!.referencedIds.includes(hit.id) ? "已引用" : "未引用"}</summary>
+            {span.retrieval.hits.map((hit) => <details key={hit.id}><summary>{hit.id} · 向量相似度 {hit.score.toFixed(3)}{hit.rerankScore !== undefined ? ` · 重排分 ${hit.rerankScore.toFixed(3)}` : ""} · {span.retrieval!.referencedIds.includes(hit.id) ? "已引用" : "未引用"}</summary>
               <p>{hit.sourcePath}</p><pre style={{ whiteSpace: "pre-wrap" }}>{hit.text}</pre>
               {hit.source && <details><summary>上游素材与来源</summary>
                 <p>原题：{hit.source.originalQuestion ?? "未记录"}</p>
                 <p>原始考察点：{hit.source.sourceFocus ?? "未记录"}</p>
                 {hit.source.sourceUrl && /^https?:\/\//.test(hit.source.sourceUrl) && <a href={hit.source.sourceUrl} target="_blank" rel="noreferrer">{hit.source.sourceTitle ?? "原文"}</a>}
-                <p>来源版本：{hit.source.sourceCommit ?? "未记录"}</p>
               </details>}
             </details>)}
             {!span.retrieval.hits.length && !span.retrieval.fallback && <p>没有匹配的知识卡片。</p>}

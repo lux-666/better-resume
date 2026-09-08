@@ -3,6 +3,7 @@ export interface EmbeddingClient {
   model: string;
   embed(inputs: string[], signal?: AbortSignal): Promise<number[][]>;
 }
+
 export function configuredEmbedding(env: NodeJS.ProcessEnv = process.env): EmbeddingClient | undefined {
   const model = env.LLM_EMBEDDING_MODEL?.trim();
   const baseUrl = (env.LLM_EMBEDDING_BASE_URL?.trim() || env.LLM_BASE_URL?.trim())?.replace(/\/+$/, "");

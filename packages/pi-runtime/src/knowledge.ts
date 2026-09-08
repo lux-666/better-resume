@@ -8,7 +8,7 @@ export const KnowledgeQuerySchema = Type.Object({
   targetDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
 }, { additionalProperties: false });
 export type KnowledgeQuery = Static<typeof KnowledgeQuerySchema>;
-export type KnowledgeHit = { id: string; kind: string; text: string; score: number; sourcePath: string; source?: KnowledgeSource };
+export type KnowledgeHit = { id: string; kind: string; text: string; score: number; rerankScore?: number; sourcePath: string; source?: KnowledgeSource };
 export interface ProbeKnowledge {
   health(): KnowledgeStatus;
   retrieve(query: KnowledgeQuery, context?: { telemetry?: TelemetryCollector; signal?: AbortSignal }): Promise<KnowledgeHit[]>;

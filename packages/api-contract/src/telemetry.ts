@@ -4,6 +4,8 @@ const optionalNumber = () => Type.Optional(Type.Number({ minimum: 0 }));
 const statuses = Type.Union([Type.Literal("running"), Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("timed_out"), Type.Literal("interrupted")]);
 export const KnowledgeSourceSchema = Type.Object({
   sourceUrl: Type.Optional(Type.String()), sourceCommit: Type.Optional(Type.String()), sourceTitle: Type.Optional(Type.String()),
+  sourceFile: Type.Optional(Type.String()), sourceSha256: Type.Optional(Type.String()),
+  sourceStartLine: Type.Optional(Type.Integer({ minimum: 1 })), sourceEndLine: Type.Optional(Type.Integer({ minimum: 1 })),
   originalQuestion: Type.Optional(Type.String()), sourceFocus: Type.Optional(Type.String()), sourceExplanation: Type.Optional(Type.String()),
 }, { additionalProperties: false });
 export type KnowledgeSource = Static<typeof KnowledgeSourceSchema>;
@@ -18,7 +20,11 @@ const TelemetrySpanSchema = Type.Object({
   fallback: Type.Optional(Type.Object({ fromModel: Type.String(), toModel: Type.String(), reason: Type.String(), adopted: Type.Boolean() })),
   retrieval: Type.Optional(Type.Object({
     query: Type.String(), fieldKind: Type.Optional(Type.String()), targetDepth: Type.Optional(Type.Number()),
-    hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), sourcePath: Type.String(), source: Type.Optional(KnowledgeSourceSchema) })),
+    hits: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), text: Type.String(), score: Type.Number(), rerankScore: Type.Optional(Type.Number()), sourcePath: Type.String(), source: Type.Optional(KnowledgeSourceSchema) })),
+    cascade: Type.Optional(Type.Object({ confidence: Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
+      candidateCount: Type.Number(), expanded: Type.Boolean(), denseGap: Type.Number(), returnedCount: Type.Number(),
+      rerankSkipped: Type.Optional(Type.Union([Type.Literal("high_confidence"), Type.Literal("empty"), Type.Literal("unconfigured")])) }, { additionalProperties: false })),
+    rerank: Type.Optional(Type.Object({ model: Type.String(), status: Type.Union([Type.Literal("succeeded"), Type.Literal("fallback")]), candidateCount: Type.Number(), durationMs: Type.Number(), reason: Type.Optional(Type.String()) }, { additionalProperties: false })),
     referencedIds: Type.Array(Type.String()), localDurationMs: optionalNumber(), fallback: Type.Optional(Type.Literal("static_playbook")),
   }, { additionalProperties: false })),
   operation: Type.String(), startedAt: Type.String(), endedAt: Type.Optional(Type.String()),
@@ -42,7 +48,7 @@ export const TelemetryTraceSchema = Type.Object({
 }, { additionalProperties: false });
 export type TelemetrySpan = Static<typeof TelemetrySpanSchema>;
 export type TelemetryTrace = Static<typeof TelemetryTraceSchema>;
-export type KnowledgeStatus = { status: "unconfigured" | "indexing" | "ready" | "failed"; count: number; model?: string; reason?: string };
+export type KnowledgeStatus = { status: "unconfigured" | "indexing" | "ready" | "failed"; count: number; model?: string; reason?: string; rerankModel?: string };
 export type RunStatus = "running" | "succeeded" | "failed" | "timed_out" | "interrupted";
 export type Stage = "received" | "report" | "interview" | "saving" | "narrative";
 const AgentStepSchema = Type.Object({

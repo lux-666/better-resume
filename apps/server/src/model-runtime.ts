@@ -45,8 +45,8 @@ function numberValue(
 
 export function resolveAgentModelIds(env: NodeJS.ProcessEnv = process.env): AgentModelIds {
   const defaultModelId = llmValue(env, "MODEL") ?? value(env, "PI_MODEL");
-  const reportModelId = llmValue(env, "REPORT_MODEL") ?? defaultModelId;
-  const interviewModelId = llmValue(env, "INTERVIEW_MODEL") ?? defaultModelId;
+  const reportModelId = llmValue(env, "REPORT_MODEL") ?? llmValue(env, "WEAK_MODEL") ?? defaultModelId;
+  const interviewModelId = llmValue(env, "INTERVIEW_MODEL") ?? llmValue(env, "STRONG_MODEL") ?? defaultModelId;
   if (!reportModelId || !interviewModelId) throw new Error("LLM model configuration is required");
   return { reportModelId, interviewModelId };
 }
@@ -66,7 +66,7 @@ export function createModelRuntime(
   modelOverride?: string,
 ): ModelRuntime {
   const provider = llmValue(env, "PROVIDER") ?? value(env, "PI_PROVIDER");
-  const modelId = modelOverride ?? llmValue(env, "MODEL") ?? value(env, "PI_MODEL");
+  const modelId = modelOverride ?? llmValue(env, "MODEL") ?? llmValue(env, "WEAK_MODEL") ?? value(env, "PI_MODEL");
   if (Boolean(provider) !== Boolean(modelId)) throw new Error("LLM provider and model must be set together");
   if (!provider || !modelId) return { mode: "demo" };
 

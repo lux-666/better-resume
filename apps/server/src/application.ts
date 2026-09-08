@@ -18,10 +18,11 @@ import { InterviewExecution } from "./execution.ts";
 import { configuredRuntimes, type RuntimeSet } from "./configured-runtimes.ts";
 import { fileURLToPath } from "node:url";
 import { configuredEmbedding } from "./embedding.ts";
+import { configuredReranker } from "./rerank.ts";
 import { KnowledgeQuerySchema } from "../../../packages/pi-runtime/src/knowledge.ts";
 import { KnowledgeStore } from "./knowledge-store.ts";
 import { extractJobFields } from "./job-intake.ts";
-export function createApplication(options: { databasePath: string; runtimes?: RuntimeSet; leaseMs?: number; deadlineMs?: number; knowledgeRoot?: string; embedding?: ReturnType<typeof configuredEmbedding> }) {
+export function createApplication(options: { databasePath: string; runtimes?: RuntimeSet; leaseMs?: number; deadlineMs?: number; knowledgeRoot?: string; embedding?: ReturnType<typeof configuredEmbedding>; reranker?: ReturnType<typeof configuredReranker> }) {
   const store = new InterviewStore(options.databasePath, options.leaseMs);
   store.recoverTelemetry();
   const hub = new TelemetryHub(store);
@@ -30,7 +31,8 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
   const embedding = options.embedding ?? (options.runtimes ? undefined : configuredEmbedding());
   const memory = new SessionMemory(store.database, embedding);
   const lifecycle = new Set<string>();
-  const knowledge = new KnowledgeStore(store.database, embedding);
+  const reranker = options.reranker ?? (options.runtimes ? undefined : configuredReranker());
+  const knowledge = new KnowledgeStore(store.database, embedding, reranker);
   const indexingAbort = new AbortController();
   const ready = knowledge.index(options.knowledgeRoot ?? fileURLToPath(new URL("../../../knowledge", import.meta.url)), indexingAbort.signal)
     .catch(() => { console.error("Knowledge indexing failed; static playbook is active. Check knowledge files and embedding configuration."); });

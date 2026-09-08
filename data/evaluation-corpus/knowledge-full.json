@@ -1,0 +1,98 @@
+[
+  {
+    "id": "ai-agent-101",
+    "query": "优化器从 SGD 换成 AdamW 时，动量、自适应学习率和解耦权重衰减各起什么作用？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-ai-agent-q101"
+    ]
+  },
+  {
+    "id": "ai-agent-104",
+    "query": "小 batch 下的归一化为什么不沿批次统计，而对每个样本的隐藏维度统计？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-ai-agent-q104"
+    ]
+  },
+  {
+    "id": "ai-agent-110",
+    "query": "二分类阈值改变后如何用真正率和假正率衡量排序能力，而不只看准确率？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-ai-agent-q110"
+    ]
+  },
+  {
+    "id": "frontend-1",
+    "query": "浮动元素撑不开父容器，同时相邻外边距发生折叠，应该核验哪个布局机制？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-frontend-q001"
+    ]
+  },
+  {
+    "id": "frontend-4",
+    "query": "同步日志、定时器回调和 Promise then 为什么按不同顺序执行？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-frontend-q004"
+    ]
+  },
+  {
+    "id": "frontend-15",
+    "query": "React 函数组件把 useState 放在条件分支里，下一次渲染为什么会发生状态错配？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-frontend-q015"
+    ]
+  },
+  {
+    "id": "backend-2",
+    "query": "两个线程以相反顺序拿两把锁，如何解释互相等待并设计预防策略？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-backend-q002"
+    ]
+  },
+  {
+    "id": "backend-5",
+    "query": "MySQL 一致性读中的 Read View 与 undo log 如何决定当前事务能看到哪些版本？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-backend-q005"
+    ]
+  },
+  {
+    "id": "backend-12",
+    "query": "接口突发请求的限流，用固定出水速率和积累令牌两种方法有什么取舍？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-backend-q012"
+    ]
+  },
+  {
+    "id": "algorithm-1",
+    "query": "在整数数组中寻找和为 target 的两个不同下标，如何用哈希表避免二重循环？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-algorithm-q001"
+    ]
+  },
+  {
+    "id": "algorithm-9",
+    "query": "有序数组旋转后如何判断二分搜索应当保留哪一半区间？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-algorithm-q009"
+    ]
+  },
+  {
+    "id": "algorithm-12",
+    "query": "不使用除法计算每个位置之外所有数的乘积，前缀与后缀如何组合？",
+    "fieldKind": "mechanism",
+    "expectedIds": [
+      "interview-bagu-algorithm-q012"
+    ]
+  }
+]

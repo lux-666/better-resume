@@ -1,50 +1,40 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { EmbeddingClient } from "./embedding.ts";
+import type { RerankClient } from "./rerank.ts";
 import type { KnowledgeHit, KnowledgeQuery, KnowledgeStatus, ProbeKnowledge } from "../../../packages/pi-runtime/src/knowledge.ts";
 import type { TelemetryCollector } from "../../../packages/pi-runtime/src/telemetry.ts";
 import { KnowledgeSourceSchema, type KnowledgeSource } from "../../../packages/api-contract/src/telemetry.ts";
 import { Check } from "typebox/value";
 
-function walk(root: string): string[] {
-  if (!existsSync(root)) return [];
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(root, entry.name);
-    return entry.isDirectory() ? walk(path) : path.endsWith(".md") ? [path] : [];
-  }).sort();
-}
 export function readKnowledgeCards(root: string) {
-  const cards = walk(root).flatMap((path) => {
-    const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
-    const frontmatter = raw.match(/^---\n([\s\S]*?)\n---\n?/);
-    if (!frontmatter) return [];
-    const meta: Record<string, unknown> = {};
-    for (const line of frontmatter[1].split("\n")) {
-      const match = line.match(/^([A-Za-z][\w-]*):\s*(.+)$/);
-      if (match) meta[match[1]] = JSON.parse(match[2]);
-    }
-    const text = raw.slice(frontmatter[0].length).trim();
+  const entries: unknown = JSON.parse(readFileSync(join(root, "cards.json"), "utf8"));
+  if (!Array.isArray(entries)) throw new Error("Knowledge cards.json must contain an array");
+  const cards = entries.map((entry: unknown, index) => {
+    const location = `cards.json entry ${index + 1}`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`Invalid knowledge card: ${location}`);
+    const meta = entry as Record<string, unknown>;
+    const text = typeof meta.text === "string" ? meta.text.trim() : "";
     const strings = (key: string) => Array.isArray(meta[key]) && meta[key].every((item) => typeof item === "string");
     if (typeof meta.id !== "string" || !meta.id || typeof meta.kind !== "string" || !strings("domains") ||
       !strings("fieldKinds") || !Array.isArray(meta.depthLevels) || !meta.depthLevels.every((n) => Number.isInteger(n) && n >= 1 && n <= 5) || !text) {
-      throw new Error(`Invalid knowledge card: ${relative(root, path)}`);
+      throw new Error(`Invalid knowledge card: ${location}`);
     }
     const source = Object.fromEntries(Object.keys(KnowledgeSourceSchema.properties).filter((key) => meta[key] !== undefined).map((key) => [key, meta[key]]));
-    if (!Check(KnowledgeSourceSchema, source)) throw new Error(`Invalid knowledge source: ${relative(root, path)}`);
+    if (!Check(KnowledgeSourceSchema, source)) throw new Error(`Invalid knowledge source: ${location}`);
     const embeddingText = [
       `领域：${(meta.domains as string[]).join(", ")}`, `字段：${(meta.fieldKinds as string[]).join(", ")}`,
       source.originalQuestion && `原题（上游素材，可能含预设）：${source.originalQuestion}`,
       source.sourceFocus && `源题考察点：${source.sourceFocus}`, text,
     ].filter(Boolean).join("\n\n");
-    return [{ id: meta.id, kind: meta.kind, domains: meta.domains as string[], fieldKinds: meta.fieldKinds as string[], source,
-      depthLevels: meta.depthLevels as number[], text, sourcePath: relative(root, path),
+    return { id: meta.id, kind: meta.kind, domains: meta.domains as string[], fieldKinds: meta.fieldKinds as string[], source,
+      depthLevels: meta.depthLevels as number[], text, sourcePath: "cards.json",
       embeddingText, embeddingHash: createHash("sha256").update(embeddingText).digest("hex"),
-      contentHash: createHash("sha256").update(raw).digest("hex") }];
+      contentHash: createHash("sha256").update(JSON.stringify(meta)).digest("hex") };
   });
   if (new Set(cards.map((card) => card.id)).size !== cards.length) throw new Error("Duplicate knowledge card ID");
-  if (cards.length > 300) throw new Error("Knowledge pilot supports at most 300 cards");
   return cards;
 }
 export function cosine(a: number[], b: number[]): number {
@@ -63,9 +53,86 @@ function decode(vector: Uint8Array): number[] {
   const buffer = Buffer.from(vector);
   return Array.from({ length: buffer.length / 8 }, (_, i) => buffer.readDoubleLE(i * 8));
 }
+
+type Candidate = KnowledgeHit & { vector: number[]; terms: Set<string>; coverage: number; fusion: number; relevance: number };
+const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
+const stopWords = new Set("的 了 和 是 与 如何 什么 为什么 有 哪些 一个 这个 可以 进行 需要 我们 你 在 对 用 时 来 中 或 什么样".split(" "));
+function terms(text: string): string[] {
+  return Array.from(segmenter.segment(text.toLowerCase())).filter((s) => s.isWordLike && !stopWords.has(s.segment)).map((s) => s.segment);
+}
+function hybridCandidates(rows: Row[], vector: number[], query: string) {
+  const queryTerms = [...new Set(terms(query))];
+  const documents = rows.map((row) => {
+    const source = JSON.parse(row.source_metadata) as KnowledgeSource;
+    const words = terms([source.originalQuestion, source.sourceFocus, source.originalQuestion ? undefined : row.text].filter(Boolean).join("\n"));
+    const counts = new Map<string, number>();
+    for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+    return { row, source, words, counts, vector: decode(row.embedding) };
+  });
+  const averageLength = documents.reduce((n, d) => n + d.words.length, 0) / (documents.length || 1) || 1;
+  const idf = new Map(queryTerms.map((word) => {
+    const frequency = documents.filter((d) => d.counts.has(word)).length;
+    return [word, Math.log(1 + (documents.length - frequency + .5) / (frequency + .5))];
+  }));
+  const queryWeight = [...idf.values()].reduce((a, b) => a + b, 0) || 1;
+  const scored = documents.map((d) => {
+    let lexical = 0, covered = 0;
+    for (const word of queryTerms) {
+      const tf = d.counts.get(word) ?? 0;
+      if (tf) covered += idf.get(word)!;
+      lexical += idf.get(word)! * tf * 2.2 / (tf + 1.2 * (.25 + .75 * d.words.length / averageLength));
+    }
+    return { id: d.row.id, kind: d.row.kind, text: d.row.text, sourcePath: d.row.source_path, source: d.source,
+      vector: d.vector, terms: new Set(d.words), score: cosine(vector, d.vector), lexical, coverage: covered / queryWeight };
+  });
+  const dense = scored.toSorted((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const lexical = scored.filter((d) => d.lexical > 0).toSorted((a, b) => b.lexical - a.lexical || a.id.localeCompare(b.id));
+  const ranks = new Map(lexical.map((d, i) => [d.id, i + 1]));
+  const candidates: Candidate[] = dense.map((d, i) => ({ ...d, fusion: 1 / (60 + i + 1) + (ranks.has(d.id) ? 1 / (60 + ranks.get(d.id)!) : 0),
+    relevance: .75 * Math.min(1, Math.max(0, d.score) / .6) + .25 * d.coverage }))
+    .sort((a, b) => b.fusion - a.fusion || b.score - a.score || a.id.localeCompare(b.id));
+  const first = dense[0];
+  const gap = first ? first.score - (dense[1]?.score ?? 0) : 0;
+  // These conservative gates are heuristics, not calibrated probabilities or portable model thresholds.
+  const confidence = first && first.id === lexical[0]?.id && first.score >= .6 && first.coverage >= .45 && gap >= .06 ? "high"
+    : first && (first.score >= .4 || (lexical[0]?.coverage ?? 0) >= .35) ? "medium" : "low";
+  return { candidates, confidence, gap } as const;
+}
+function selectContext(candidates: Candidate[], threshold: number): KnowledgeHit[] {
+  const ranked = candidates.filter((c) => c.relevance >= threshold).toSorted((a, b) => b.relevance - a.relevance || b.fusion - a.fusion || a.id.localeCompare(b.id));
+  const distinct: Candidate[] = [];
+  for (const candidate of ranked) {
+    const duplicate = distinct.some((prior) => {
+      const intersection = [...candidate.terms].filter((t) => prior.terms.has(t)).length;
+      const union = candidate.terms.size + prior.terms.size - intersection;
+      return cosine(candidate.vector, prior.vector) >= .98 && intersection / (union || 1) >= .8;
+    });
+    if (!duplicate) distinct.push(candidate);
+  }
+  // Count distinct cards before applying the gap; two duplicates must not hide a useful third card.
+  const gapIndex = distinct.findIndex((c, i) => i >= 2 && distinct[i - 1].relevance - c.relevance >= .2);
+  const remaining = gapIndex < 0 ? distinct : distinct.slice(0, gapIndex);
+  const selected: Candidate[] = [];
+  while (remaining.length && selected.length < 8) {
+    let bestIndex = -1, bestScore = -Infinity;
+    for (const [i, candidate] of remaining.entries()) {
+      let similarity = 0;
+      for (const prior of selected) {
+        const cosineSimilarity = Math.max(0, cosine(candidate.vector, prior.vector));
+        similarity = Math.max(similarity, cosineSimilarity);
+      }
+      const mmr = .8 * candidate.relevance - .2 * similarity;
+      if (mmr > bestScore) { bestScore = mmr; bestIndex = i; }
+    }
+    if (bestIndex < 0 || (selected.length >= 2 && bestScore < .2)) break;
+    selected.push(remaining.splice(bestIndex, 1)[0]);
+  }
+  return selected.map(({ id, kind, text, sourcePath, source, score, rerankScore }) => ({ id, kind, text, sourcePath, source, score, ...(rerankScore === undefined ? {} : { rerankScore }) }));
+}
+
 export class KnowledgeStore implements ProbeKnowledge {
   private state: KnowledgeStatus;
-  constructor(private readonly database: DatabaseSync, private readonly client?: EmbeddingClient) {
+  constructor(private readonly database: DatabaseSync, private readonly client?: EmbeddingClient, private readonly reranker?: RerankClient) {
     this.state = { status: client ? "indexing" : "unconfigured", count: 0, model: client?.model,
       ...(!client ? { reason: "Embedding model, URL or API key is not configured" } : {}) };
     database.exec(`CREATE TABLE IF NOT EXISTS knowledge_chunks(
@@ -77,7 +144,7 @@ export class KnowledgeStore implements ProbeKnowledge {
       if (!columns.some((column) => column.name === name)) database.exec(`ALTER TABLE knowledge_chunks ADD COLUMN ${name} TEXT NOT NULL DEFAULT '${fallback}'`);
     }
   }
-  health(): KnowledgeStatus { return { ...this.state }; }
+  health(): KnowledgeStatus { return { ...this.state, ...(this.reranker ? { rerankModel: this.reranker.model } : {}) }; }
   async index(root: string, signal?: AbortSignal): Promise<{ indexed: number; skipped: number; durationMs: number }> {
     const started = performance.now();
     if (!this.client) return { indexed: 0, skipped: 0, durationMs: 0 };
@@ -116,7 +183,7 @@ export class KnowledgeStore implements ProbeKnowledge {
       throw error;
     }
   }
-  async retrieve(query: KnowledgeQuery, context: { telemetry?: TelemetryCollector; signal?: AbortSignal } = {}): Promise<KnowledgeHit[]> {
+  async retrieve(query: KnowledgeQuery, context: { telemetry?: TelemetryCollector; signal?: AbortSignal; forceRerank?: boolean } = {}): Promise<KnowledgeHit[]> {
     const { telemetry, signal } = context;
     const parent = telemetry?.trace.spans.findLast((span) => span.kind === "tool" && span.toolName === "retrieve_probe_knowledge" && span.status === "running");
     const span = telemetry?.start("retrieve_probe_knowledge", "retrieval", parent?.spanId, { retrieval: { ...query, hits: [], referencedIds: [] } });
@@ -129,12 +196,35 @@ export class KnowledgeStore implements ProbeKnowledge {
       signal?.throwIfAborted();
       const started = performance.now();
       const rows = this.database.prepare("SELECT * FROM knowledge_chunks").all() as Row[];
-      const hits = rows.filter((row) => (!query.fieldKind || JSON.parse(row.field_kinds).includes(query.fieldKind)) &&
-        (!query.targetDepth || JSON.parse(row.depth_levels).includes(query.targetDepth)))
-        .map((row) => ({ id: row.id, kind: row.kind, text: row.text, sourcePath: row.source_path,
-          source: JSON.parse(row.source_metadata) as KnowledgeSource, score: cosine(vector, decode(row.embedding)) }))
-        .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, 3);
-      if (span) telemetry!.finish(span, { retrieval: { ...query, hits, referencedIds: [], localDurationMs: performance.now() - started } });
+      const filtered = rows.filter((row) => (!query.fieldKind || JSON.parse(row.field_kinds).includes(query.fieldKind)) &&
+        (!query.targetDepth || JSON.parse(row.depth_levels).includes(query.targetDepth)));
+      const { candidates: ranked, confidence, gap } = hybridCandidates(filtered, vector, query.query);
+      let candidates = ranked.slice(0, 20);
+      if (confidence === "low") candidates = ranked.slice(0, 50);
+      const localDurationMs = performance.now() - started;
+      let rerank: { model: string; status: "succeeded" | "fallback"; candidateCount: number; durationMs: number; reason?: string } | undefined;
+      if (this.reranker && (confidence !== "high" || context.forceRerank) && candidates.length) {
+        const rerankStarted = performance.now();
+        rerank = { model: this.reranker.model, status: "fallback", candidateCount: candidates.length, durationMs: 0 };
+        try {
+          const scores = await this.reranker.rerank(query.query, candidates.map((hit) => hit.source?.originalQuestion ? [hit.source.originalQuestion, hit.source.sourceFocus].filter(Boolean).join("\n\n") : hit.text), signal);
+          if (scores.length !== candidates.length || Array.from(scores).some((s) => !Number.isFinite(s) || s < 0 || s > 1)) throw new Error("Invalid reranker scores");
+          candidates = candidates.map((hit, index) => ({ ...hit, rerankScore: scores[index], relevance: scores[index] }));
+          rerank.status = "succeeded";
+        } catch (error) {
+          rerank.reason = error instanceof Error && error.name === "TimeoutError" ? "timeout" : "provider_or_response_error";
+          // Provider failure preserves hybrid candidates; command cancellation must still propagate.
+          signal?.throwIfAborted();
+        } finally { rerank.durationMs = performance.now() - rerankStarted; }
+      }
+      signal?.throwIfAborted();
+      const selectionStarted = performance.now();
+      const threshold = confidence === "high" && !rerank ? Math.max(.45, Math.max(0, ...candidates.map((c) => c.relevance)) - .12) : .45;
+      const hits = selectContext(candidates, threshold);
+      if (span) telemetry!.finish(span, { retrieval: { ...query, hits, referencedIds: [], localDurationMs: localDurationMs + performance.now() - selectionStarted,
+        cascade: { confidence, candidateCount: candidates.length, expanded: confidence === "low", denseGap: gap, returnedCount: hits.length,
+          rerankSkipped: confidence === "high" && !context.forceRerank ? "high_confidence" : !candidates.length ? "empty" : !this.reranker ? "unconfigured" : undefined },
+        ...(rerank ? { rerank } : {}) } });
       return hits;
     } catch (error) {
       if (span) { telemetry!.error(span, "api_error", error, true); telemetry!.finish(span, { retrieval: { ...query, hits: [], referencedIds: [], fallback: "static_playbook" } }); }

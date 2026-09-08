@@ -23,6 +23,6 @@ test("time reminder boundary does not force completion, with absent or invalid d
   Object.assign(state, budget, { startedAt: new Date(Date.now() - 21 * 60_000).toISOString() }); assert.equal(validateCompletion(state).forced, false);
 });
 test("single-source workflow documents the live boundaries and regression gate", () => {
-  const doc = readFileSync(new URL("../../../docs/development/single-source-workflow.md", import.meta.url), "utf8");
+  const doc = readFileSync(new URL("../../../docs/development.md", import.meta.url), "utf8");
   for (const symbol of ["requirementLines", "buildSummary", "withOneProviderRetry", "runModelStage", "interviewTimeBudgetExhausted", "InterviewStateResponseSchema", "RequirementStatusSchema", "Claim", "ReportContradiction", "check:duplication", "test-helpers.ts", "noUnusedLocals", "noUnusedParameters"]) assert.ok(doc.includes(symbol), `Workflow must name ${symbol}`);
 });

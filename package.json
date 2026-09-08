@@ -16,13 +16,14 @@
     "eval:routing:report-replay": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-report-replay.ts",
     "build": "npm run typecheck && npm run build -w @better-resume/web",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run check:duplication && node --import tsx --test apps/*/src/*.test.ts packages/*/src/*.test.ts docs/architecture/structure.test.mjs",
+    "test": "npm run typecheck && npm run check:duplication && node --import tsx --test apps/*/src/*.test.ts packages/*/src/*.test.ts scripts/docs.test.mjs",
     "eval:phase3": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-phase3.ts",
     "eval:knowledge": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-knowledge.ts",
     "eval:knowledge:questions": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-knowledge-questions.ts",
     "eval:phase4": "node --env-file-if-exists=.env --import tsx apps/server/src/evaluate-phase4.ts",
     "backup": "node --env-file-if-exists=.env --import tsx apps/server/src/backup.ts",
-    "check:duplication": "jscpd apps packages --min-tokens 70 --format typescript,tsx --ignore '**/*.test.ts' --threshold 0 --reporters console --silent"
+    "check:duplication": "jscpd apps packages --min-tokens 70 --format typescript,tsx --ignore '**/*.test.ts' --threshold 0 --reporters console --silent",
+    "knowledge:import": "node --import tsx apps/server/src/knowledge-import.ts"
   },
   "engines": {
     "node": ">=22.19"

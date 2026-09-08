@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { importKnowledge, parseQuestions } from "./knowledge-import.ts";
+import { readKnowledgeCards } from "./knowledge-store.ts";
+test("all 338 cards share one source file and have distinct source question identities", () => {
+  const root = fileURLToPath(new URL("../../../knowledge", import.meta.url));
+  const cards = readKnowledgeCards(root);
+  const identities = cards.map((c) => {
+    assert.equal(c.sourcePath, "cards.json");
+    assert.ok(c.source.originalQuestion); assert.match(c.source.sourceUrl!, /^https:\/\/github.com\/xyma2003\/interview-bagu\/blob\//);
+    return c.id.match(/^interview-bagu-(ai-agent|frontend|backend|algorithm)-q(\d+)/)!.slice(1).map((v, i) => i ? Number(v) : v).join(":");
+  });
+  assert.equal(new Set(identities).size, 338);
+  assert.deepEqual(Object.fromEntries(["ai-agent", "frontend", "backend", "algorithm"].map((c) => [c, identities.filter((id) => id.startsWith(c + ":")).length])), { "ai-agent": 106, frontend: 68, backend: 64, algorithm: 100 });
+  assert.deepEqual(readdirSync(root).sort(), ["LICENSE", "README.md", "cards.json"]);
+});
+test("parser ignores fenced question headings and preserves statements and focus", () => {
+  const qs = parseQuestions('# title\n### Q1: real\n**题目**：input\n\n```md\n### Q999: fake\n```\n**考察点**：\n1. constraint\n\n**示例答案**：answer\n### Q2: second\ntext');
+  assert.equal(qs.length, 2); assert.equal(qs[0].focus, "1. constraint");
+  assert.match(qs[0].statement, /input/); assert.equal(qs[1].number, 2);
+  assert.throws(() => parseQuestions('### Q1: a\n### Q1: b'), /Duplicate/);
+});
+test("local reimport preserves edited cards, creates no archives, and accepts changes to upstream files", (t) => {
+  const target = mkdtempSync(join(tmpdir(), "knowledge-import-")), source = join(target, "upstream");
+  t.after(() => rmSync(target, { recursive: true, force: true }));
+  for (const c of ["ai-agent", "frontend", "backend", "algorithm"]) mkdirSync(join(source, c), { recursive: true });
+  writeFileSync(join(source, "LICENSE"), "MIT test license");
+  writeFileSync(join(source, "algorithm/questions.md"), "### Q1: test algorithm\n**题目**：input\n**考察点**：boundary\n");
+  assert.equal(importKnowledge(source, target).added, 1);
+  const card = join(target, "knowledge/cards.json");
+  const edited = JSON.parse(readFileSync(card, "utf8"));
+  edited[0].text += "\nManual refinement";
+  writeFileSync(card, JSON.stringify(edited));
+  const before = edited[0];
+  const lock = join(target, "knowledge/.import.lock");
+  writeFileSync(lock, "");
+  assert.throws(() => importKnowledge(source, target), { code: "EEXIST" });
+  assert.deepEqual(JSON.parse(readFileSync(card, "utf8"))[0], before);
+  rmSync(lock);
+  assert.equal(importKnowledge(source, target).skipped, 1);
+  assert.deepEqual(JSON.parse(readFileSync(card, "utf8"))[0], before);
+  assert.deepEqual(readdirSync(target).sort(), ["knowledge", "upstream"]);
+  writeFileSync(join(source, "algorithm/questions.md"), "### Q1: test algorithm\n**题目**：input\n**考察点**：boundary\n### Q2: new\n");
+  assert.equal(importKnowledge(source, target).added, 1);
+  assert.deepEqual(JSON.parse(readFileSync(card, "utf8"))[0], before);
+  writeFileSync(join(source, "algorithm/questions.md"), "### Q1: changed\n### Q2: new\n");
+  assert.equal(importKnowledge(source, target).added, 0);
+  assert.deepEqual(JSON.parse(readFileSync(card, "utf8"))[0], before);
+  assert.equal(readKnowledgeCards(join(target, "knowledge")).length, 2);
+  writeFileSync(join(source, "algorithm/questions.md"), "### Q1: duplicate\n### Q1: duplicate\n");
+  assert.throws(() => importKnowledge(source, target), /Duplicate/);
+  assert.deepEqual(readdirSync(join(target, "knowledge")).sort(), ["LICENSE", "cards.json"]);
+  assert.deepEqual(JSON.parse(readFileSync(card, "utf8"))[0], before);
+});
