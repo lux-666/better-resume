@@ -61,7 +61,7 @@ export class SessionMemory implements SessionRecall {
       if (span) telemetry!.finish(span); return vectors;
     } catch (error) { if (span) { telemetry!.error(span, "api_error", error); telemetry!.finish(span); } throw error; }
   }
-  async recall(state: InterviewState, query: RecallQuery, context: { telemetry?: TelemetryCollector; signal?: AbortSignal }): Promise<RecallHit[]> {
+  async recall(state: InterviewState, query: RecallQuery, context: { telemetry?: TelemetryCollector; signal?: AbortSignal; excludedTurnIds?: string[] }): Promise<RecallHit[]> {
     const { telemetry, signal } = context;
     const observedQuery = query.scope === "resume" ? { ...query, query: "[resume query omitted]" } : query;
     const span = telemetry?.start("recall", "recall", undefined, { recall: { ...observedQuery, sourceStateVersion: state.traces.length, hits: [] } });
@@ -69,7 +69,7 @@ export class SessionMemory implements SessionRecall {
       if (query.projectId && !state.candidate.projects.some((p) => p.id === query.projectId)) throw new Error("Unknown project");
       const document = query.scope === "resume" ? this.document(state.sessionId) : undefined;
       const chunks: Chunk[] = query.scope === "resume" ? (document ? JSON.parse(document.chunks) : []) : [
-        ...(query.scope === "turns" || query.scope === "both" ? state.turns.map((t) => ({ kind: "turn" as const, id: t.id, projectId: t.projectId, turnIndex: t.index, text: `问题：${t.question}\n回答：${t.answer}` })) : []),
+        ...(query.scope === "turns" || query.scope === "both" ? state.turns.filter((t) => !context.excludedTurnIds?.includes(t.id)).map((t) => ({ kind: "turn" as const, id: t.id, projectId: t.projectId, turnIndex: t.index, text: `问题：${t.question}\n回答：${t.answer}` })) : []),
         ...(query.scope === "evidence" || query.scope === "both" ? state.evidence.map((e) => ({ kind: "evidence" as const, id: e.id, projectId: e.projectId, turnIndex: state.turns.find((t) => t.id === e.turnId)?.index,
           text: `${e.statement}\n原话：${e.sourceQuote}\n能力：${e.competencyId}；深度：${e.depthLevel ?? "未知"}；性质：${e.polarity}` })) : []),
       ];

@@ -3,6 +3,7 @@ import { RolePackSchema, RequirementMatrixSchema } from "../../interview-core/sr
 import { ReportNarrativeSchema } from "./narrative.ts";
 import { DepthLevelSchema, DispositionSchema, LeadSchema, FieldConclusionSchema, ProjectedLeadSchema } from "./investigation.ts";
 import { Type, type Static } from "typebox";
+import { Errors } from "typebox/value";
 import type { InterviewState } from "../../interview-core/src/index.ts";
 
 const ClaimSchema = Type.Object({
@@ -235,6 +236,30 @@ export const CreateInterviewBodySchema = Type.Object({
   candidate: CandidateIntakeSchema,
   job: Type.Optional(JobIntakeSchema),
 }, { additionalProperties: false });
+
+export function getCreateInterviewError(value: unknown): string | undefined {
+  const error = Errors(CreateInterviewBodySchema, value)[0];
+  if (!error) return undefined;
+  const labels: Record<string, string> = {
+    "/candidate": "候选人信息", "/candidate/name": "姓名", "/candidate/skills": "技能", "/candidate/projects": "项目经历",
+    "/job": "岗位信息", "/job/title": "岗位", "/job/introduction": "岗位介绍", "/job/responsibilities": "岗位职责", "/job/requirements": "任职要求",
+    "/resume": "简历全文", "/resume/text": "简历全文", "/resume/consent": "简历全文使用授权", "/maxTurns": "轮次上限", "/timeBudgetMinutes": "时长提醒",
+  };
+  const project = error.instancePath.match(/^\/candidate\/projects\/(\d+)(?:\/(name|description))?$/);
+  const skill = error.instancePath.match(/^\/candidate\/skills\/(\d+)$/);
+  const label = project ? `项目 ${Number(project[1]) + 1}的${project[2] === "name" ? "名称" : "经历"}`
+    : skill ? `技能第 ${Number(skill[1]) + 1}项` : labels[error.instancePath] ?? "表单";
+  const limit = "limit" in error.params ? error.params.limit : undefined;
+  switch (error.keyword) {
+    case "maxItems": return `${label}最多 ${limit} 项，请检查是否混入了其他章节内容`;
+    case "minItems": return `${label}至少填写 ${limit} 项`;
+    case "maxLength": return `${label}不能超过 ${limit} 个字符`;
+    case "minLength": return `${label}不能为空`;
+    case "maximum": return `${label}不能大于 ${limit}`;
+    case "minimum": return `${label}不能小于 ${limit}`;
+    default: return `${label}格式不正确，请检查后重试`;
+  }
+}
 
 export const AnswerCommandSchema = Type.Object({
   intent: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("clarify"), Type.Literal("skip"), Type.Literal("finish")])),

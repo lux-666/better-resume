@@ -39,6 +39,24 @@ test("resume parser never copies an unclassified full document into project expe
   assert.deepEqual(parsed.projects, [{ name: "主要项目经历", description: "" }]);
 });
 
+test("skills stop before game experience instead of turning its narrative into dozens of skills", () => {
+  const parsed = parseResume(`姓名：测试候选人
+项目名称：工作流平台
+项目描述：设计任务编排与恢复机制。
+专业能力
+AI 工程：AI Agent、多智能体协作、工作流编排、数据分析、快速 Web Demo
+游戏经历与玩法观察
+《示例游戏》｜约 100h
+${Array.from({ length: 53 }, (_, index) => `玩法观察${index + 1}`).join("，")}`);
+  assert.deepEqual(parsed.skills, ["AI 工程：AI Agent", "多智能体协作", "工作流编排", "数据分析", "快速 Web Demo"]);
+});
+
+test("skills do not absorb later education, interests, or contact sections", () => {
+  for (const heading of ["教育背景", "兴趣爱好", "电话：13800000000", "Hobbies", "Education"]) {
+    assert.deepEqual(parseResume(`姓名：测试候选人\n技能：Go、Python\n${heading}\n不属于技能的内容`).skills, ["Go", "Python"]);
+  }
+});
+
 test("resume parser recovers projects from a PDF-style flattened layout", () => {
   const parsed = parseResume(`
 黄   欣

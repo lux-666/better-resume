@@ -36,5 +36,6 @@
     "tsx": "latest",
     "typescript": "latest",
     "vite": "latest"
-  }
+  },
+  "version": "0.2.0"
 }

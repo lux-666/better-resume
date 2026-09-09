@@ -1,5 +1,7 @@
 # Better Resume
 
+当前版本：[`v0.2.0`](https://github.com/lux-666/better-resume/releases/tag/v0.2.0)。更新记录见 [CHANGELOG](CHANGELOG.md)。
+
 以完成 Candidate Report 为目标的证据驱动 Interview Agent。`interview-core` 保存 Report、Claim、Evidence、Competency 和确定性护栏；`pi-runtime` 让 Agent 读取 Report、提交 grounded edit、自主提问或请求结束。
 
 多项目面试、逐字 Evidence 校验、岗位要求矩阵与报告导出；支持本地历史、失败恢复、获准使用的简历全文检索，以及 338 题的公共知识检索。应用和 SQLite 在本机，真实模型调用配置的 API。
@@ -7,13 +9,14 @@
 - [架构与业务契约](docs/architecture.md)
 - [开发与验证](docs/development.md)
 - [知识库维护与检索](knowledge/README.md)
+- [参赛材料](docs/competition/README.md)
 
 ## 启动
 
 要求 Node.js 22.19+。从 GitHub 下载 ZIP 并解压，或克隆仓库后进入项目目录。
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

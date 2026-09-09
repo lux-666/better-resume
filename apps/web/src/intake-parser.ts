@@ -39,13 +39,14 @@ function inlineValue(lines: string[], labels: RegExp): string | undefined {
 }
 
 function sectionValue(lines: string[], headings: RegExp): string | undefined {
+  const resumeHeadings = /^(?:基本信息|个人信息|联系方式|电话|邮箱|教育背景|教育经历|工作经历|工作经验|实习经历|校园经历|获奖情况|荣誉奖项|证书|自我评价|个人评价|兴趣爱好|游戏经历(?:与玩法观察)?|游戏经验|education|work experience|experience|internships?|awards?|certifications?|interests?|hobbies|game(?:play)? experience)\s*(?:[:：].*)?$/i;
   const allHeadings = /^(?:姓名|技能|专业技能|技术栈|专业能力|项目经历|项目经验|项目名称|项目角色|项目描述|项目成果|岗位|岗位名称|职位名称|岗位介绍|职位介绍|岗位职责|工作职责|职责|岗位要求|任职要求|要求|name|skills?|projects?|project name|project role|description|outcomes?|position|title|overview|responsibilities|requirements|qualifications)\s*[:：]?/i;
   const start = lines.findIndex((line) => headings.test(line.trim()));
   if (start < 0) return undefined;
   const inline = lines[start].replace(headings, "").replace(/^\s*[:：-]\s*/, "").trim();
   const values = inline ? [inline] : [];
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (allHeadings.test(lines[index].trim())) break;
+    if (allHeadings.test(lines[index].trim()) || resumeHeadings.test(lines[index].trim())) break;
     if (lines[index].trim()) values.push(lines[index].trim());
   }
   return values.join("\n") || undefined;

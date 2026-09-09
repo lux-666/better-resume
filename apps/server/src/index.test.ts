@@ -76,6 +76,13 @@ test("Answer API survives process recovery, leases commands, and rejects stale q
     const response = await fetch(`http://127.0.0.1:${port}${path}`);
     return { response, body: await response.json() as Record<string, any> };
   };
+  const oversizedSkills = await post("/api/interviews", {
+    candidate: { name: "测试", skills: Array.from({ length: 53 }, (_, index) => `技能${index}`), projects: [{ name: "项目", description: "开发经历" }] },
+  });
+  assert.equal(oversizedSkills.response.status, 400);
+  assert.equal(oversizedSkills.body.code, "INVALID_REQUEST");
+  assert.match(oversizedSkills.body.message, /技能最多 50 项/);
+  assert.deepEqual((await get("/api/interviews")).body, { sessions: [] });
   const created = await post("/api/interviews", {
     candidate: {
       name: "Contract",

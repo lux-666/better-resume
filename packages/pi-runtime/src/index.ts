@@ -70,14 +70,18 @@ export const AskCandidateSchema = Type.Object({
   question: Type.String({
     minLength: 1,
     maxLength: 300,
-    description: "Ask for exactly one fact, decision, reason, method, or result in one sentence with one final ? or ？. Do not combine several requests.",
+    description: "Ask for exactly one fact, decision, reason, method, or result in one sentence with one final ? or ？. Do not combine several requests. Example: 请选一次任务中断的经历，说说你当时怎么定位出错环节的？ Do not prepend 有没有哪一次失败 or append another question.",
   }),
 }, { additionalProperties: false });
 
 export const FinishInterviewSchema = Type.Object({
   reason: Type.String({ minLength: 1, maxLength: 300 }),
 }, { additionalProperties: false });
-const Phase3AskCandidateSchema = Type.Object({ ...AskCandidateSchema.properties, targetDepth: DepthLevelSchema }, { additionalProperties: false });
+const Phase3AskCandidateSchema = Type.Object({ ...AskCandidateSchema.properties,
+  targetDepth: { ...DepthLevelSchema,
+    description: "Required integer: 1=statement, 2=detail, 3=rationale, 4=tradeoff, 5=transfer. Return the number, not a label or string.",
+  },
+}, { additionalProperties: false });
 
 export type AskCandidate = Static<typeof AskCandidateSchema>;
 
@@ -514,7 +518,12 @@ export async function decideNextStepWithAgent(options: {
         validateQuestionGeneration(normalized);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Question is invalid";
-        throw new EvidenceValidationError(`${message}: ${normalized.question}`);
+        const repair = /exactly one fact/.test(message) ? "Rewrite to request only one method, reason, or result; remove independent follow-up clauses."
+          : /question mark/.test(message) ? "Use exactly one question mark at the end."
+          : /internal evaluation/.test(message) ? "Ask about the actual project without mentioning our scoring or record keeping."
+          : /targetDepth/.test(message) ? "Set targetDepth to an integer from 1 to 5."
+          : "Correct the rejected constraint and call ask_candidate again.";
+        throw new EvidenceValidationError(`${message}. ${repair} Rejected question: ${normalized.question}`);
       }
       if (options.state.turns.some((turn) =>
         normalizeQuestion(turn.question) === normalizeQuestion(normalized.question)
@@ -545,6 +554,8 @@ export async function decideNextStepWithAgent(options: {
       return { content: [{ type: "text", text: "Interview completion accepted." }], details: {}, terminate: true };
     },
   };
+  const recentTurnCount = options.memory ? 2 : 4;
+  const contextTurns = options.state.turns.slice(-(recentTurnCount + 1));
   const summarySpan = options.memory ? options.telemetry?.start("summary_update", "state") : undefined;
   const summary = options.memory ? buildSummary(options.state) : undefined;
   if (summary && summarySpan) {
@@ -554,11 +565,11 @@ export async function decideNextStepWithAgent(options: {
   const agent = createAgent({
     model: options.model,
     streamFn: options.streamFn,
-    tools: [readReport, ...(options.knowledge ? [retrieveKnowledge] : []), ...(options.memory ? [recallTool({ memory: options.memory, state: options.state, telemetry: options.telemetry, signal: options.signal, budget: options.recallBudget ?? { remaining: 2 }, canRead: () => reportRead })] : []), askCandidate, finishInterview],
+    tools: [readReport, ...(options.knowledge ? [retrieveKnowledge] : []), ...(options.memory ? [recallTool({ memory: options.memory, state: options.state, telemetry: options.telemetry, signal: options.signal, budget: options.recallBudget ?? { remaining: 2 }, excludedTurnIds: contextTurns.map((turn) => turn.id), canRead: () => reportRead })] : []), askCandidate, finishInterview],
     prompt: [
-      "You are a professional, restrained peer interviewer. Be curious and specific, use plain Chinese, never praise, judge, or narrate internal record keeping. Do not say 记录为、按不确定处理、证据、字段、维度、Report、Evidence.",
+      "You are a professional, restrained peer interviewer. Be curious and specific, use plain Chinese, never praise, judge, or narrate our evaluation bookkeeping. Do not mention our scoring, evidence gaps, report fields or ability dimensions. Technical terms such as 数据字段、评分算法、任务标记 are allowed when discussing the candidate's actual project.",
       "Your goal is a credible Candidate Report that identifies the depth demonstrated and the limits observed, not filling boxes. Progress along statement/detail/rationale/tradeoff/transfer. Pick one focused request; never demand all levels at once.",
-      "Set targetDepth for each question. Prefer a relevant open lead and record followsLeadId only when this question actually follows it. Never follow the same lead twice. After two vague attempts at a level, change topic; reaching level 5 does not require further escalation.",
+      "Set targetDepth to the INTEGER 1=statement, 2=detail, 3=rationale, 4=tradeoff, 5=transfer; never use a string label. Prefer a relevant open lead and record followsLeadId only when this question actually follows it. Never follow the same lead twice. After two vague attempts at a level, change topic; reaching level 5 does not require further escalation.",
       "Follow a concrete thread while answers provide new information. Depth is an opportunity, not a quota. If the candidate says they cannot recall or did not handle a detail, accept that boundary; do not ask the same fact with different wording or demand harder rationale. At most try ONE easier, concrete angle. Two consecutive vague/skipped/repeated answers across ANY fields in a project mean move on. Honor an explicit request to change projects immediately. Never target a project with pauseReason, even to fill missing fields or resolve contradictions; retain those as report limitations. When no other project is available, use finish_interview to invite candidate-led discussion. Do not re-ask supported facts or move away from a productive answer just to cover the portfolio.",
       "Use a short neutral transition when changing projects. Acknowledgement and transition contain no question or assessment. Missing/weak support is not proof of lack of ability.",
       "First call read_report. Then choose the single most valuable investigation step.",
@@ -574,6 +585,7 @@ export async function decideNextStepWithAgent(options: {
       "Do not pursue a saturated field after two repeated answers; switch fields or finish when no required field is missing.",
       "Do not mechanically enumerate report fields. Ask one concise neutral question and never reveal internal evaluation terms.",
       "Ask for exactly one fact, decision, reason, method, or result. Do not combine responsibility, decisions, delivery, metrics, and causes in one question.",
+      "When inviting an example, ask directly about one aspect: 请选一次任务中断的经历，说说你当时怎么定位出错环节的？ Do not prepend a separate 有没有哪一次失败 question. After rejection, fix all constraints; replacing a question mark with a comma does not turn two requests into one.",
       "When there is no valuable remaining investigation and completion.allowed is true, use finish_interview. This opens a candidate-led discussion before closing; if rejected, ask about one blocker.",
       "Do not output prose outside tools.",
     ].join("\n"),
@@ -583,14 +595,15 @@ export async function decideNextStepWithAgent(options: {
   });
   agent.shouldStopAfterTurn = ({ toolResults }) => {
     validationFailures += toolResults.filter((result) => result.isError).length;
-    return !accepted && (validationFailures >= 2 || rejectedFinishes >= 2);
+    return !accepted && (validationFailures >= 3 || rejectedFinishes >= 2);
   };
   return runObservedAgent(agent, JSON.stringify({
     completion: validateCompletion(options.state),
+    latestQuestion: options.state.turns.at(-1)?.question,
     latestAnswer: options.state.turns.at(-1)?.answer.slice(0, options.memory ? 4000 : undefined),
     ...(summary ? { summary } : {}),
     timeBudgetExhausted: interviewTimeBudgetExhausted(options.state),
-    recentTurns: options.state.turns.slice(options.memory ? -2 : -4).map(({ question, answer, reportFieldId }) => ({
+    recentTurns: contextTurns.slice(0, -1).map(({ question, answer, reportFieldId }) => ({
       question, answer: answer.slice(0, options.memory ? 4000 : undefined), reportFieldId, ...(options.memory ? { truncated: answer.length > 4000 } : {}),
     })),
     saturatedFieldIds: saturatedFieldIds(options.state),

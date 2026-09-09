@@ -24,6 +24,11 @@ test("session recall isolates sessions, reuses vectors, rebuilds deleted cache, 
     const other = createInterviewState("other", "role", createFixtureCandidate()); store.create(other);
     assert.deepEqual(await memory.recall(other, query, {}), []);
     assert.deepEqual(await memory.recall(state, { ...query, projectId: state.candidate.projects[1].id }, {}).then((r) => r.filter((h) => h.projectId !== state.candidate.projects[1].id)), []);
+    const excludedTurnIds = state.turns.map((turn) => turn.id);
+    assert.deepEqual(await memory.recall(state, { query: early, scope: "turns" }, { excludedTurnIds }), []);
+    const mixed = await memory.recall(state, { query: early, scope: "both" }, { excludedTurnIds });
+    assert.ok(mixed.length > 0);
+    assert.ok(mixed.every((hit) => hit.kind === "evidence"));
   } finally { store.close(); }
 });
 test("opt-in resume has no State/telemetry plaintext, deletion prevents hits and late index writes", async () => {

@@ -6,11 +6,24 @@ import {
   AnswerCommandSchema,
   ApiErrorSchema,
   CreateInterviewBodySchema,
+  getCreateInterviewError,
   InterviewStateResponseSchema,
   InterviewStepResponseSchema,
   InterviewReportResponseSchema,
 } from "./index.ts";
 import { buildInterviewReportBundle } from "../../interview-core/src/index.ts";
+
+test("create validation identifies invalid fields without truncating input", () => {
+  const candidate = { name: "测试", skills: Array.from({ length: 53 }, (_, index) => `技能${index}`), projects: [{ name: "项目", description: "开发经历" }] };
+  assert.match(getCreateInterviewError({ candidate })!, /技能最多 50 项/);
+  assert.equal(candidate.skills.length, 53);
+  assert.equal(getCreateInterviewError({ candidate: { ...candidate, skills: candidate.skills.slice(0, 50) } }), undefined);
+  const valid = { candidate: { ...candidate, skills: ["Go"] } };
+  assert.match(getCreateInterviewError({ candidate: { ...valid.candidate, skills: ["a".repeat(81)] } })!, /技能第 1项不能超过 80/);
+  assert.match(getCreateInterviewError({ candidate: { ...valid.candidate, projects: [{ name: "项目", description: "a".repeat(8001) }] } })!, /项目 1的经历不能超过 8000/);
+  assert.match(getCreateInterviewError({ ...valid, maxTurns: 51 })!, /轮次上限不能大于 50/);
+  assert.match(getCreateInterviewError({ ...valid, job: { title: "岗位", introduction: "介绍", responsibilities: "职责", requirements: "a".repeat(12001) } })!, /任职要求不能超过 12000/);
+});
 
 test("HTTP command and error envelopes are executable contracts", () => {
   assert.equal(Check(CreateInterviewBodySchema, {

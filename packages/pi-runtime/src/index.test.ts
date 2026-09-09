@@ -325,7 +325,83 @@ test("question guard rejects fake warmth and multiple questions", () => {
     { question: "你负责什么？效果如何？" },
     { question: "你的负责范围是什么、做了哪些关键决定，以及最终交付了什么？" },
     { question: "为了提高评分，你能补充证据缺口吗？" },
+    { question: "你用哪些输入判断边界，为什么这样选择？" },
+    { question: "请说明划分规则，并且给出性能结果？" },
+    { question: "为了补齐评估字段，你做了什么？" },
   ]) assert.throws(() => validateQuestionGeneration(value));
+});
+
+test("question guard accepts nested decisions and technical terminology without confusing them with evaluation bookkeeping", () => {
+  for (const question of [
+    "你是怎么判断哪些输入需要独立处理的？",
+    "你如何决定哪个环节要拆成独立节点？",
+    "你用哪个指标判断执行结果是否符合预期？",
+    "节点输出中有哪些字段？",
+    "你如何标记已经完成的任务？",
+    "这个节点如何处理输入以及输出之间的依赖？",
+    "自动评测系统的评分规则是怎么实现的？",
+    "你如何归档执行日志？",
+    "请挑一次工具执行失败或流程被中断的经历，说说你当时是靠什么信息定位到出问题的是哪个环节的？",
+  ]) assert.deepEqual(validateQuestionGeneration({ question }), { question });
+});
+
+test("Interview Agent accepts a focused engineering question and Core applies the same validation", async () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  state.phaseVersion = 3;
+  activateInterview(state);
+  const ask = { targetFieldId: state.report.fields[0].id, targetDepth: 3, reason: "Investigate the input boundary.", question: "你是怎么判断哪些输入字段需要独立处理的？" };
+  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+  faux.setResponses([
+    (context) => {
+      const schema = context.tools!.find((tool) => tool.name === "ask_candidate")!.parameters;
+      assert.match(JSON.stringify(schema), /Required integer/);
+      return fauxAssistantMessage(fauxToolCall("read_report", {}), { stopReason: "toolUse" });
+    },
+    fauxAssistantMessage(fauxToolCall("ask_candidate", ask), { stopReason: "toolUse" }),
+  ]);
+  const decision = await decideNextStepWithAgent({ model: faux.getModel(), streamFn: models.streamSimple.bind(models), state });
+  applyInterviewDecision(state, decision);
+  assert.equal(state.currentQuestion, ask.question);
+  assert.equal(faux.state.callCount, 2);
+});
+
+test("Interview Agent receives specific correction instructions for a rejected question", async () => {
+  const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+  activateInterview(state);
+  const ask = { targetFieldId: state.report.fields[0].id, reason: "Investigate ownership.", question: "你负责哪些工作？" };
+  const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("read_report", {}), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("ask_candidate", { ...ask, question: "你负责什么，效果如何？" }), { stopReason: "toolUse" }),
+    (context) => {
+      assert.match(JSON.stringify(context.messages.at(-1)), /Rewrite to request only one method, reason, or result/);
+      return fauxAssistantMessage(fauxToolCall("ask_candidate", ask), { stopReason: "toolUse" });
+    },
+  ]);
+  const decision = await decideNextStepWithAgent({ model: faux.getModel(), streamFn: models.streamSimple.bind(models), state });
+  assert.equal(decision.question, ask.question);
+});
+
+test("Interview Agent can repair punctuation then focus, but stops after three rejected proposals", async () => {
+  for (const repairsSuccessfully of [true, false]) {
+    const state = createInterviewState("session", "role", createFixtureCandidate("Candidate"));
+    activateInterview(state);
+    const ask = { targetFieldId: state.report.fields[0].id, reason: "Ask about one incident.", question: "请选一次任务中断的经历，说说你当时怎么定位出错环节的？" };
+    const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+    const propose = (question: string) => fauxAssistantMessage(fauxToolCall("ask_candidate", { ...ask, question }), { stopReason: "toolUse" });
+    const twoRequests = "有没有哪一次任务失败过，当时你是怎么判断问题出在哪一步的？";
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("read_report", {}), { stopReason: "toolUse" }),
+      propose("有没有哪一次任务失败过？当时你是怎么判断问题出在哪一步的？"),
+      propose(twoRequests),
+      propose(repairsSuccessfully ? ask.question : twoRequests),
+      propose(ask.question),
+    ]);
+    const operation = decideNextStepWithAgent({ model: faux.getModel(), streamFn: models.streamSimple.bind(models), state });
+    if (repairsSuccessfully) assert.equal((await operation).question, ask.question);
+    else await assert.rejects(operation, /exactly one fact/);
+    assert.equal(faux.state.callCount, 4);
+  }
 });
 
 test("core still rejects an invalid Agent question", () => {

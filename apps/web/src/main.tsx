@@ -14,6 +14,7 @@ import { extractPdfPageText, parseResume } from "./intake-parser.ts";
 import "./style.css";
 
 import { post, request } from "./api.ts";
+import { getCreateInterviewError } from "@better-resume/api-contract";
 import { useInterviewSession } from "./use-interview-session.ts";
 import { RunProgressPanel } from "./run-progress.tsx";
 import { InterviewTimeReminder } from "./interview-time-reminder.tsx";
@@ -135,13 +136,7 @@ function App() {
     void runOnce("create", async () => {
       try {
         setError("");
-        if (!candidateName.trim()) throw new Error("请填写候选人姓名");
-        if (projects.length === 0 || !Number.isInteger(maxTurns) || maxTurns < 5 || maxTurns > 50
-                || projects.some((project) => !project.name.trim() || !project.description.trim())) {
-          throw new Error("至少完整填写一个项目名称和项目经历");
-        }
-        if (jobIsIncomplete) throw new Error("填写 JD 时，岗位、岗位介绍、职责和要求四项都不能为空");
-        const created = await post<InterviewStateResponse>("/api/interviews", {
+        const body: CreateInterviewBody = {
           candidate: {
             name: candidateName.trim(),
             skills: skills.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean),
@@ -161,7 +156,10 @@ function App() {
               requirements: jobRequirements.trim(),
             },
           } : {}),
-        });
+        };
+        const validationError = getCreateInterviewError(body);
+        if (validationError) throw new Error(validationError);
+        const created = await post<InterviewStateResponse>("/api/interviews", body);
         restore(created);
         setHistoryRefresh((value) => value + 1);
         setResumeText(""); setResumeConsent(false);

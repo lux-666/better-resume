@@ -450,13 +450,17 @@ export function validateCandidateQuestion(question: string, acknowledgement?: st
   if (marks !== 1 || !/[?？]$/.test(question)) {
     throw new Error("Question output must contain exactly one final question mark");
   }
-  const requestedFacts = question.replace(/(?:判断|验证|确认|评估)[^?？]*是否/g, "")
+  // Embedded clauses (e.g. 怎么判断哪些输入...) describe one investigation,
+  // while interrogatives in separate clauses still indicate multiple requests.
+  const requestedFacts = question.replace(/(?:判断|验证|确认|评估|决定|识别|确定|区分|定位|查明)[^?？，,；;]*?(?:是否|哪些|什么|哪(?:个|项|种|一)|多少)/g, "")
     .match(/为什么|如何|怎么|哪些|什么|多少|是否|哪(?:个|些|项|种|一)/g) ?? [];
-  if (requestedFacts.length > 1 || /以及|并且|分别/.test(question)) {
+  if (requestedFacts.length > 1 || /(?:以及|并且|同时|然后)(?:请|再|也)?(?:说明|介绍|解释|描述|列出|给出|提供)/.test(question)) {
     throw new Error("Question output must request exactly one fact");
   }
   const output = `${acknowledgement ?? ""}\n${question}`;
-  if (/rubric|policy|target.?gap|probe|评分|得分|证据|字段|维度|report|evidence|能力模型|记录为|按.{0,8}处理|暂按|标记|归档/i.test(output)) {
+  // Field names, scoring systems, and task markers can be the candidate's work.
+  // Reject evaluation bookkeeping phrases, not those technical nouns on their own.
+  if (/rubric|target.?gap|candidate\s*report|evidence\s*gap|能力模型|(?:证据|评分|能力)缺口|(?:报告|评分|评估)(?:字段|维度)|(?:提高|补齐|填满|完善)(?:你的|本轮|面试)?(?:评分|得分|证据|字段|维度)|(?:记录为|标记为|暂按).{0,8}(?:不确定|缺失|薄弱|支持|不支持|未验证)|(?:你的|本轮|候选人|面试)(?:的)?(?:评分|得分|能力维度)/i.test(output)) {
     throw new Error("Question output reveals internal evaluation context");
   }
   if (/非常棒|很棒|很好|优秀|厉害|显然|这证明|由此可见|你确实|不错|可以看出/.test(output)) {

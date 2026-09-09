@@ -46,3 +46,16 @@ npm run build
 知识检索与提问对照命令见[知识库](../knowledge/README.md)。记录质量、调用次数、上下文、失败与延迟，不能只凭少量成功样本宣布质量不下降或完成真人准入。人工复核应检查漏追、语义重复、Evidence 错配、过早结束与报告可用性。模型自报 confidence 不是校准概率；Provider usage 缺失被适配器归一为零时，不能据此宣称缓存未命中。
 
 不要提交 `.env`、会话数据库、原始简历、私人回答、临时评测输出或中间稿。参赛成稿及其公开实验依据集中在 `docs/competition/`。
+
+## 版本发布
+
+根目录 `package.json` 与 `package-lock.json` 使用同一版本号；发布变更写入 `CHANGELOG.md`。完成测试与构建后，将对应提交标记为 `v<版本号>`，推送提交和标签，并创建 GitHub Release。
+
+源码包从标签生成，例如：
+
+```bash
+mkdir -p releases
+git archive --format=zip --prefix=better-resume-v0.2.0/ --output=releases/better-resume-v0.2.0-source.zip v0.2.0
+```
+
+`releases/` 用于本地交付文件，`.local-archive/` 用于本地草稿与配置副本，均不提交。源码包只包含标签跟踪的文件；在新目录解压后使用 `npm ci` 安装锁定依赖并验证构建。

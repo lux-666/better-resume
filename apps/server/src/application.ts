@@ -7,7 +7,7 @@ import { NarrativeService } from "./narrative-service.ts";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Check } from "typebox/value";
-import { AnswerCommandSchema, SupplementCommandSchema, CreateInterviewBodySchema, type AnswerCommand, type CreateInterviewBody } from "../../../packages/api-contract/src/index.ts";
+import { AnswerCommandSchema, SupplementCommandSchema, getCreateInterviewError, type AnswerCommand, type CreateInterviewBody } from "../../../packages/api-contract/src/index.ts";
 import { buildCandidateFromIntake, buildInterviewRole, createInterviewState, normalizeInterviewIntake } from "../../../packages/interview-core/src/index.ts";
 import { EvidenceValidationError, ModelProviderError } from "../../../packages/pi-runtime/src/index.ts";
 import { summarizeTelemetry } from "../../../packages/api-contract/src/telemetry-summary.ts";
@@ -45,7 +45,7 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
       if (method === "POST" && pathname === "/api/intake/job") {
         const body = await readJson(request);
         if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 100_000) throw new HttpError(400, "INVALID_REQUEST", "JD 文本不能为空且不能超过 100,000 字符");
-        return json(response, 200, await extractJobFields(body.text, runtimes.report, AbortSignal.timeout(options.deadlineMs ?? 90_000)));
+        return json(response, 200, await extractJobFields(body.text, runtimes.report, AbortSignal.timeout(options.deadlineMs ?? 180_000)));
       }
       if (method === "POST" && pathname === "/api/knowledge/search") {
         const body = await readJson(request);
@@ -59,9 +59,11 @@ export function createApplication(options: { databasePath: string; runtimes?: Ru
       if (method === "GET" && pathname === "/api/interviews") return json(response, 200, { sessions: store.history() });
       if (method === "GET" && pathname === "/api/metrics") return json(response, 200, summarizeTelemetry(store.history().flatMap((s) => hub.traces(s.sessionId))));
       if (method === "POST" && pathname === "/api/interviews") {
-        const body = await readJson(request);
-        if (!Check(CreateInterviewBodySchema, body)) throw new HttpError(400, "INVALID_REQUEST", "Create interview body is invalid");
-        const intake = normalizeInterviewIntake(body as CreateInterviewBody);
+        const value = await readJson(request);
+        const validationError = getCreateInterviewError(value);
+        if (validationError) throw new HttpError(400, "INVALID_REQUEST", validationError);
+        const body = value as CreateInterviewBody;
+        const intake = normalizeInterviewIntake(body);
         const role = buildInterviewRole({ job: intake.job });
         const state = createInterviewState(randomUUID(), role, buildCandidateFromIntake(intake, role), intake);
         state.phaseVersion = 3;
